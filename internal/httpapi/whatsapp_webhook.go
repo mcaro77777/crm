@@ -86,19 +86,10 @@ func (s *Servidor) recibirWebhookWhatsApp(w http.ResponseWriter, r *http.Request
 	huella := sha256.Sum256(cuerpo)
 	id, _ := identificadores.Nuevo("whe")
 	ahora := time.Now().UTC()
-	resultado, err := s.db.ExecContext(r.Context(), `INSERT IGNORE INTO webhook_event (id,organization_id,fuente,payload,huella,status,not_before,created_at,updated_at) VALUES (?,?, 'whatsapp', ?,?,'pendiente',?,?,?)`, id, organizacionID, string(cuerpo), hex.EncodeToString(huella[:]), ahora, ahora, ahora)
+	_, err = s.db.ExecContext(r.Context(), `INSERT IGNORE INTO webhook_event (id,organization_id,fuente,payload,huella,status,not_before,created_at,updated_at) VALUES (?,?, 'whatsapp', ?,?,'pendiente',?,?,?)`, id, organizacionID, string(cuerpo), hex.EncodeToString(huella[:]), ahora, ahora, ahora)
 	if err != nil {
 		responderError(w, 503, "webhook_store_failed", "No se pudo guardar el evento", nil)
 		return
-	}
-	insertadas, _ := resultado.RowsAffected()
-	if insertadas > 0 {
-		if err := s.procesarEventoWhatsApp(r.Context(), organizacionID, cuerpo); err != nil {
-			_, _ = s.db.ExecContext(r.Context(), "UPDATE webhook_event SET attempts=attempts+1,last_error=?,updated_at=? WHERE id=?", err.Error(), ahora, id)
-			s.logger.Error("webhook de WhatsApp pendiente", "evento", id, "error", err)
-		} else {
-			_, _ = s.db.ExecContext(r.Context(), "UPDATE webhook_event SET status='procesado',attempts=1,processed_at=?,updated_at=? WHERE id=?", ahora, ahora, id)
-		}
 	}
 	responderJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

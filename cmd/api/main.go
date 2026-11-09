@@ -17,6 +17,7 @@ import (
 	"crm-api/internal/eventos"
 	"crm-api/internal/httpapi"
 	"crm-api/internal/version"
+	"crm-api/internal/webhooks"
 )
 
 func main() {
@@ -59,11 +60,14 @@ func ejecutar() error {
 	contextoWorker, detenerWorker := context.WithCancel(context.Background())
 	worker := despacho.NuevoWorker(db, cfg.LlaveCifrado, bus, logger)
 	go worker.Ejecutar(contextoWorker)
+	manejador, procesarWebhook := httpapi.NuevoServidorConProcesador(cfg, db, logger, bus)
+	workerWebhooks := webhooks.NuevoWorker(db, procesarWebhook, logger)
+	go workerWebhooks.Ejecutar(contextoWorker)
 	defer detenerWorker()
 
 	servidor := &http.Server{
 		Addr:              ":" + cfg.Puerto,
-		Handler:           httpapi.NuevoServidorConBus(cfg, db, logger, bus),
+		Handler:           manejador,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// SSE mantiene conexiones largas; cada acceso a BD tiene sus propios timeouts.

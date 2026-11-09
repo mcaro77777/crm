@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+
+	"crm-api/internal/eventos"
 )
 
 type conversacionDTO struct {
@@ -151,20 +155,37 @@ func (s *Servidor) eventosSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	_, _ = fmt.Fprint(w, ": conectado\n\n")
-	flusher.Flush()
-	canal, cancelar := s.bus.Suscribir(sesion.OrganizacionID)
+	desdeTexto := strings.TrimSpace(r.URL.Query().Get("since"))
+	if desdeTexto == "" {
+		desdeTexto = strings.TrimSpace(r.Header.Get("Last-Event-ID"))
+	}
+	desde, err := strconv.ParseInt(desdeTexto, 10, 64)
+	recuperar := desdeTexto != "" && err == nil && desde >= 0
+	var canal <-chan eventos.Evento
+	var pendientes []eventos.Evento
+	var perdido bool
+	var cancelar func()
+	if recuperar {
+		canal, pendientes, perdido, cancelar = s.bus.SuscribirDesde(sesion.OrganizacionID, desde)
+	} else {
+		canal, cancelar = s.bus.Suscribir(sesion.OrganizacionID)
+	}
 	defer cancelar()
+	_, _ = fmt.Fprint(w, ": conectado\n\n")
+	if perdido {
+		_, _ = fmt.Fprint(w, "event: sync.required\ndata: {\"reason\":\"history_expired\"}\n\n")
+	} else {
+		for _, evento := range pendientes {
+			escribirEventoSSE(w, evento)
+		}
+	}
+	flusher.Flush()
 	latido := time.NewTicker(25 * time.Second)
 	defer latido.Stop()
 	for {
 		select {
 		case evento := <-canal:
-			dato, err := json.Marshal(evento.Dato)
-			if err != nil {
-				continue
-			}
-			_, _ = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", evento.ID, evento.Tipo, dato)
+			escribirEventoSSE(w, evento)
 			flusher.Flush()
 		case <-latido.C:
 			_, _ = fmt.Fprint(w, ": ping\n\n")
@@ -173,6 +194,14 @@ func (s *Servidor) eventosSSE(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+func escribirEventoSSE(w http.ResponseWriter, evento eventos.Evento) {
+	dato, err := json.Marshal(evento.Dato)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", evento.ID, evento.Tipo, dato)
 }
 
 // Hijack se conserva para que el wrapper HTTP no quite capacidades del servidor.

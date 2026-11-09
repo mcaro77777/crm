@@ -24,6 +24,7 @@ import (
 	"crm-api/internal/despacho"
 	"crm-api/internal/eventos"
 	"crm-api/internal/seguridad"
+	"crm-api/internal/webhooks"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -158,18 +159,21 @@ func TestIntegracionCircuitoAgenteA7(t *testing.T) {
 		LlaveCifrado: llave, DirectorioCliente: t.TempDir(), MetaGraphBaseURL: metaFalso.URL,
 	}
 	bus := eventos.NuevoBus()
-	api := httptest.NewServer(NuevoServidorConBus(cfg, db, slog.New(slog.NewJSONHandler(&logs, nil)), bus))
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	manejador, procesarWebhook := NuevoServidorConProcesador(cfg, db, logger, bus)
+	api := httptest.NewServer(manejador)
 	defer api.Close()
 	cerebro.Lock()
 	cerebro.apiURL = api.URL
 	cerebro.Unlock()
-	worker := despacho.NuevoWorker(db, llave, bus, slog.New(slog.NewJSONHandler(&logs, nil)))
+	worker := despacho.NuevoWorker(db, llave, bus, logger)
+	workerWebhooks := webhooks.NuevoWorker(db, procesarWebhook, logger)
 	tokenWebhook := (&Servidor{cfg: cfg}).tokenWebhook(org)
 
 	t.Run("circuito completo e idempotencia", func(t *testing.T) {
 		cuerpo := webhookA7("56911111111", "wamid.a7.exito", "Hola, quiero comprar")
-		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, cuerpo)
-		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, cuerpo)
+		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, cuerpo, workerWebhooks)
+		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, cuerpo, workerWebhooks)
 		conv, dsp := idsCircuitoA7(t, db, org, "wamid.a7.exito")
 		forzarDespachoA7(t, db, dsp)
 		procesado, err := worker.ProcesarUnaVez(ctx)
@@ -190,7 +194,7 @@ func TestIntegracionCircuitoAgenteA7(t *testing.T) {
 		cerebro.Lock()
 		cerebro.modo, cerebro.intentos = "reintento", 0
 		cerebro.Unlock()
-		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, webhookA7("56922222222", "wamid.a7.retry", "¿Siguen atendiendo?"))
+		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, webhookA7("56922222222", "wamid.a7.retry", "¿Siguen atendiendo?"), workerWebhooks)
 		_, dsp := idsCircuitoA7(t, db, org, "wamid.a7.retry")
 		for intento := 1; intento <= 3; intento++ {
 			forzarDespachoA7(t, db, dsp)
@@ -212,7 +216,7 @@ func TestIntegracionCircuitoAgenteA7(t *testing.T) {
 		cerebro.Lock()
 		cerebro.modo, cerebro.intentos = "definitivo", 0
 		cerebro.Unlock()
-		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, webhookA7("56933333333", "wamid.a7.4xx", "Necesito ayuda"))
+		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, webhookA7("56933333333", "wamid.a7.4xx", "Necesito ayuda"), workerWebhooks)
 		conv, dsp := idsCircuitoA7(t, db, org, "wamid.a7.4xx")
 		forzarDespachoA7(t, db, dsp)
 		_, err := worker.ProcesarUnaVez(ctx)
@@ -231,7 +235,7 @@ func TestIntegracionCircuitoAgenteA7(t *testing.T) {
 		cerebro.Lock()
 		cerebro.modo, cerebro.intentos = "recuperado", 0
 		cerebro.Unlock()
-		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, webhookA7("56944444444", "wamid.a7.lease", "¿Hay alguien?"))
+		enviarWebhookA7(t, api.URL, tokenWebhook, appSecret, webhookA7("56944444444", "wamid.a7.lease", "¿Hay alguien?"), workerWebhooks)
 		_, dsp := idsCircuitoA7(t, db, org, "wamid.a7.lease")
 		if _, err := db.ExecContext(ctx, "UPDATE dispatch SET status='en_vuelo',attempts=0,leased_until=?,not_before=? WHERE id=?", time.Now().UTC().Add(-time.Minute), time.Now().UTC().Add(-time.Minute), dsp); err != nil {
 			t.Fatal(err)
@@ -293,7 +297,7 @@ func webhookA7(identidad, mensajeID, texto string) []byte {
 	return cuerpo
 }
 
-func enviarWebhookA7(t *testing.T, apiURL, token, secreto string, cuerpo []byte) {
+func enviarWebhookA7(t *testing.T, apiURL, token, secreto string, cuerpo []byte, worker *webhooks.Worker) {
 	t.Helper()
 	mac := hmac.New(sha256.New, []byte(secreto))
 	_, _ = mac.Write(cuerpo)
@@ -308,6 +312,9 @@ func enviarWebhookA7(t *testing.T, apiURL, token, secreto string, cuerpo []byte)
 	if res.StatusCode != http.StatusOK {
 		detalle, _ := io.ReadAll(res.Body)
 		t.Fatalf("webhook=%d %s", res.StatusCode, detalle)
+	}
+	if _, err := worker.ProcesarUnaVez(context.Background()); err != nil {
+		t.Fatalf("procesar webhook guardado: %v", err)
 	}
 }
 

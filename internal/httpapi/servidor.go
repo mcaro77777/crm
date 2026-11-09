@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -34,6 +36,13 @@ func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Log
 }
 
 func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) http.Handler {
+	manejador, _ := NuevoServidorConProcesador(cfg, db, logger, bus)
+	return manejador
+}
+
+// NuevoServidorConProcesador entrega, ademas del HTTP, la funcion que consume
+// el worker durable de webhooks. Ambos comparten exactamente el mismo dominio.
+func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) (http.Handler, func(context.Context, string, string, []byte) error) {
 	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), handoffs: handoff.Nuevo(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute)}
 	mux := http.NewServeMux()
 
@@ -91,7 +100,16 @@ func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *sl
 		responderError(w, http.StatusNotFound, "not_found", "Ruta API no encontrada", nil)
 	})
 	mux.Handle("/", manejadorSPA(cfg.DirectorioCliente))
-	return middlewareBase(logger, cfg.URLBase, !cfg.Produccion(), mux)
+	return middlewareBase(logger, cfg.URLBase, !cfg.Produccion(), mux), s.procesarWebhookGuardado
+}
+
+func (s *Servidor) procesarWebhookGuardado(ctx context.Context, organizacionID, fuente string, payload []byte) error {
+	switch fuente {
+	case "whatsapp":
+		return s.procesarEventoWhatsApp(ctx, organizacionID, payload)
+	default:
+		return fmt.Errorf("fuente de webhook no soportada: %s", fuente)
+	}
 }
 
 func (s *Servidor) salud(w http.ResponseWriter, r *http.Request) {
@@ -100,8 +118,13 @@ func (s *Servidor) salud(w http.ResponseWriter, r *http.Request) {
 		responderError(w, http.StatusServiceUnavailable, "db_unavailable", "Base de datos no disponible", nil)
 		return
 	}
+	var pendientes, agotados int
+	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(status IN ('pendiente','en_proceso')),0),COALESCE(SUM(status='agotado'),0) FROM webhook_event`).Scan(&pendientes, &agotados); err != nil {
+		s.logger.Warn("no se pudo contar el inbox de webhooks", "error", err)
+	}
 	responderJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "version": version.Version, "commit": version.Commit, "database": "ok",
+		"webhooks": map[string]int{"pendientes": pendientes, "agotados": agotados},
 	})
 }
 
