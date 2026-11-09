@@ -136,7 +136,11 @@ func TestIntegracionAPIBot(t *testing.T) {
 	if err := db.QueryRowContext(ctx, "SELECT ai_generated,wa_message_id FROM message WHERE organization_id=? AND conversation_id='cv_bot_test'", org).Scan(&generada, &waID); err != nil || !generada || waID.Valid {
 		t.Fatalf("sandbox incorrecto: ai=%v wa=%v err=%v", generada, waID, err)
 	}
-	_, _ = db.ExecContext(ctx, "UPDATE conversation SET handoff_at=?,handoff_reason='modelo' WHERE id='cv_bot_test'", ahora)
+	res = peticionBot(t, cliente, http.MethodPost, api.URL+"/api/bot/handoff", botKey, []byte(`{"conversationId":"cv_bot_test","reason":"hostilidad"}`), false)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("handoff bot=%d %s", res.StatusCode, leer(res))
+	}
+	res.Body.Close()
 	res = peticionBot(t, cliente, http.MethodPost, api.URL+"/api/bot/messages", botKey, []byte(`{"conversationId":"cv_bot_test","text":"No debe salir"}`), false)
 	if res.StatusCode != 409 || !strings.Contains(leer(res), "ai_paused") {
 		t.Fatal("handoff no bloqueo al bot")

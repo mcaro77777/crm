@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"crm-api/internal/eventos"
+	"crm-api/internal/handoff"
 	"crm-api/internal/seguridad"
 )
 
@@ -16,6 +17,7 @@ const intervaloBarrido = 2 * time.Second
 type Worker struct {
 	db         *sql.DB
 	repo       *Repositorio
+	handoffs   *handoff.Servicio
 	llave      []byte
 	bus        *eventos.Bus
 	logger     *slog.Logger
@@ -23,7 +25,7 @@ type Worker struct {
 }
 
 func NuevoWorker(db *sql.DB, llave []byte, bus *eventos.Bus, logger *slog.Logger) *Worker {
-	return &Worker{db: db, repo: NuevoRepositorio(db), llave: llave, bus: bus, logger: logger, entregador: NuevoEntregador()}
+	return &Worker{db: db, repo: NuevoRepositorio(db), handoffs: handoff.Nuevo(db), llave: llave, bus: bus, logger: logger, entregador: NuevoEntregador()}
 }
 
 // Ejecutar barre el outbox hasta que el contexto se cancele. La durabilidad
@@ -115,13 +117,13 @@ func (w *Worker) fallo(ctx context.Context, fila Fila, reintentable bool, detall
 	if !caduca {
 		return
 	}
-	cambio, err := w.repo.PasarAHumano(ctx, fila, time.Now().UTC())
+	estado, cambio, err := w.handoffs.Tomar(ctx, fila.OrganizacionID, fila.ConversacionID, "error", time.Now().UTC())
 	if err != nil {
 		w.logger.Error("fallo al traspasar conversacion", "conversacion", fila.ConversacionID, "error", err)
 		return
 	}
 	if cambio {
-		w.bus.Publicar(fila.OrganizacionID, "conversation.updated", map[string]any{"conversationId": fila.ConversacionID, "handoffReason": "error"})
+		w.bus.Publicar(fila.OrganizacionID, "conversation.updated", map[string]any{"conversationId": fila.ConversacionID, "aiEnabled": estado.IAHabilitada, "handoffAt": estado.HandoffEn, "handoffReason": estado.Motivo})
 	}
 }
 

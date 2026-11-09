@@ -20,7 +20,7 @@ var (
 type datosConversacion struct {
 	OrgID, ConvID, Canal, ContactoID, Nombre, Identidad string
 	Slug                                                sql.NullString
-	IAHabilitada, Prueba                                bool
+	IAHabilitada, AgenteHabilitado, Prueba              bool
 	Handoff                                             sql.NullTime
 	UltimoEntrante                                      sql.NullTime
 }
@@ -36,14 +36,14 @@ type filaMensaje struct {
 
 func ConstruirEvento(ctx context.Context, db *sql.DB, fila Fila, ahora time.Time) (Evento, error) {
 	var d datosConversacion
-	err := db.QueryRowContext(ctx, `SELECT o.id,o.slug,cv.id,cv.channel,cv.ai_enabled,cv.is_test,cv.handoff_at,cv.last_inbound_at,c.id,c.name,c.wa_identity FROM conversation cv JOIN organization o ON o.id=cv.organization_id JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.id=? AND cv.organization_id=?`, fila.ConversacionID, fila.OrganizacionID).Scan(&d.OrgID, &d.Slug, &d.ConvID, &d.Canal, &d.IAHabilitada, &d.Prueba, &d.Handoff, &d.UltimoEntrante, &d.ContactoID, &d.Nombre, &d.Identidad)
+	err := db.QueryRowContext(ctx, `SELECT o.id,o.slug,cv.id,cv.channel,cv.ai_enabled,ap.enabled,cv.is_test,cv.handoff_at,cv.last_inbound_at,c.id,c.name,c.wa_identity FROM conversation cv JOIN organization o ON o.id=cv.organization_id JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id JOIN agent_profile ap ON ap.organization_id=cv.organization_id WHERE cv.id=? AND cv.organization_id=?`, fila.ConversacionID, fila.OrganizacionID).Scan(&d.OrgID, &d.Slug, &d.ConvID, &d.Canal, &d.IAHabilitada, &d.AgenteHabilitado, &d.Prueba, &d.Handoff, &d.UltimoEntrante, &d.ContactoID, &d.Nombre, &d.Identidad)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Evento{}, ErrConversacionAusente
 	}
 	if err != nil {
 		return Evento{}, err
 	}
-	if !d.IAHabilitada || d.Handoff.Valid {
+	if !d.IAHabilitada || !d.AgenteHabilitado || d.Handoff.Valid {
 		return Evento{}, ErrIAPausada
 	}
 

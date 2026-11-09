@@ -11,26 +11,32 @@ import (
 )
 
 type conversacionDTO struct {
-	ID                 string       `json:"id"`
-	ContactoID         string       `json:"contactoId"`
-	Nombre             string       `json:"nombre"`
-	Canal              string       `json:"canal"`
-	Identidad          string       `json:"identidad"`
-	IAActiva           bool         `json:"iaActiva"`
-	HandoffEn          sql.NullTime `json:"-"`
-	HandoffJSON        *time.Time   `json:"handoffEn"`
-	UltimoEntrante     sql.NullTime `json:"-"`
-	UltimoEntranteJSON *time.Time   `json:"ultimoEntrante"`
-	UltimoMensaje      sql.NullTime `json:"-"`
-	UltimoMensajeJSON  *time.Time   `json:"ultimoMensaje"`
-	NoLeidos           int          `json:"noLeidos"`
-	CreadoEn           time.Time    `json:"creadoEn"`
+	ID                 string         `json:"id"`
+	ContactoID         string         `json:"contactoId"`
+	Nombre             string         `json:"nombre"`
+	Canal              string         `json:"canal"`
+	Identidad          string         `json:"identidad"`
+	IAActiva           bool           `json:"iaActiva"`
+	HandoffEn          sql.NullTime   `json:"-"`
+	HandoffJSON        *time.Time     `json:"handoffEn"`
+	HandoffMotivo      sql.NullString `json:"-"`
+	HandoffMotivoJSON  *string        `json:"handoffMotivo"`
+	UltimoEntrante     sql.NullTime   `json:"-"`
+	UltimoEntranteJSON *time.Time     `json:"ultimoEntrante"`
+	UltimoMensaje      sql.NullTime   `json:"-"`
+	UltimoMensajeJSON  *time.Time     `json:"ultimoMensaje"`
+	NoLeidos           int            `json:"noLeidos"`
+	CreadoEn           time.Time      `json:"creadoEn"`
 }
 
 func (c *conversacionDTO) normalizar() {
 	if c.HandoffEn.Valid {
 		v := c.HandoffEn.Time
 		c.HandoffJSON = &v
+	}
+	if c.HandoffMotivo.Valid {
+		v := c.HandoffMotivo.String
+		c.HandoffMotivoJSON = &v
 	}
 	if c.UltimoEntrante.Valid {
 		v := c.UltimoEntrante.Time
@@ -46,7 +52,7 @@ func (s *Servidor) listarConversaciones(w http.ResponseWriter, r *http.Request) 
 	sesion := sesionDe(r.Context())
 	limite := numeroConsulta(r, "limit", 50, 1, 200)
 	desde := numeroConsulta(r, "offset", 0, 0, 100000)
-	rows, err := s.db.QueryContext(r.Context(), "SELECT cv.id,cv.contact_id,c.name,cv.channel,c.wa_identity,cv.ai_enabled,cv.handoff_at,cv.last_inbound_at,cv.last_message_at,cv.unread_count,cv.created_at FROM `conversation` cv JOIN `contact` c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.is_test=0 ORDER BY COALESCE(cv.last_message_at,cv.created_at) DESC LIMIT ? OFFSET ?", sesion.OrganizacionID, limite, desde)
+	rows, err := s.db.QueryContext(r.Context(), "SELECT cv.id,cv.contact_id,c.name,cv.channel,c.wa_identity,cv.ai_enabled,cv.handoff_at,cv.handoff_reason,cv.last_inbound_at,cv.last_message_at,cv.unread_count,cv.created_at FROM `conversation` cv JOIN `contact` c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.is_test=0 ORDER BY COALESCE(cv.last_message_at,cv.created_at) DESC LIMIT ? OFFSET ?", sesion.OrganizacionID, limite, desde)
 	if err != nil {
 		s.errorInterno(w, "listar conversaciones", err)
 		return
@@ -55,7 +61,7 @@ func (s *Servidor) listarConversaciones(w http.ResponseWriter, r *http.Request) 
 	items := make([]conversacionDTO, 0)
 	for rows.Next() {
 		var c conversacionDTO
-		if err := rows.Scan(&c.ID, &c.ContactoID, &c.Nombre, &c.Canal, &c.Identidad, &c.IAActiva, &c.HandoffEn, &c.UltimoEntrante, &c.UltimoMensaje, &c.NoLeidos, &c.CreadoEn); err != nil {
+		if err := rows.Scan(&c.ID, &c.ContactoID, &c.Nombre, &c.Canal, &c.Identidad, &c.IAActiva, &c.HandoffEn, &c.HandoffMotivo, &c.UltimoEntrante, &c.UltimoMensaje, &c.NoLeidos, &c.CreadoEn); err != nil {
 			s.errorInterno(w, "leer conversaciones", err)
 			return
 		}
@@ -72,7 +78,7 @@ func (s *Servidor) listarConversaciones(w http.ResponseWriter, r *http.Request) 
 func (s *Servidor) obtenerConversacion(w http.ResponseWriter, r *http.Request) {
 	sesion := sesionDe(r.Context())
 	var c conversacionDTO
-	err := s.db.QueryRowContext(r.Context(), "SELECT cv.id,cv.contact_id,c.name,cv.channel,c.wa_identity,cv.ai_enabled,cv.handoff_at,cv.last_inbound_at,cv.last_message_at,cv.unread_count,cv.created_at FROM `conversation` cv JOIN `contact` c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.id=?", sesion.OrganizacionID, r.PathValue("id")).Scan(&c.ID, &c.ContactoID, &c.Nombre, &c.Canal, &c.Identidad, &c.IAActiva, &c.HandoffEn, &c.UltimoEntrante, &c.UltimoMensaje, &c.NoLeidos, &c.CreadoEn)
+	err := s.db.QueryRowContext(r.Context(), "SELECT cv.id,cv.contact_id,c.name,cv.channel,c.wa_identity,cv.ai_enabled,cv.handoff_at,cv.handoff_reason,cv.last_inbound_at,cv.last_message_at,cv.unread_count,cv.created_at FROM `conversation` cv JOIN `contact` c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.id=?", sesion.OrganizacionID, r.PathValue("id")).Scan(&c.ID, &c.ContactoID, &c.Nombre, &c.Canal, &c.Identidad, &c.IAActiva, &c.HandoffEn, &c.HandoffMotivo, &c.UltimoEntrante, &c.UltimoMensaje, &c.NoLeidos, &c.CreadoEn)
 	if err != nil {
 		s.errorInterno(w, "obtener conversacion", err)
 		return

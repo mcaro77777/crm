@@ -50,6 +50,20 @@ organización y conserva el código y cuerpo de respuesta. Inyecta la credencial
 del proveedor solo en el salto servidor a servidor. Un `401` o `402` pausa la
 credencial para impedir reintentos dañinos.
 
+### `POST /api/bot/handoff`
+
+```json
+{
+  "conversationId": "cv_...",
+  "reason": "modelo"
+}
+```
+
+Pasa la conversación a una persona y cancela atómicamente cualquier despacho
+pendiente o en vuelo. Los motivos admitidos son `cliente`, `modelo`, `error`,
+`ventana` y `hostilidad`. Repetir la solicitud es seguro y conserva la primera
+causa del traspaso.
+
 ## Errores relevantes
 
 - `401 unauthorized`: falta la clave o no coincide.

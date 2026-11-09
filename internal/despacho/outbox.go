@@ -205,11 +205,6 @@ func EsperaReintento(intentos int) time.Duration {
 	return 4 * time.Second
 }
 
-func (r *Repositorio) PasarAHumano(ctx context.Context, f Fila, ahora time.Time) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `UPDATE conversation SET ai_enabled=0,handoff_at=?,handoff_reason='error',updated_at=? WHERE id=? AND organization_id=? AND handoff_at IS NULL`, ahora, ahora, f.ConversacionID, f.OrganizacionID)
-	return unaFila(res, err)
-}
-
 type scanner interface{ Scan(...any) error }
 
 func escanearFila(row scanner) (Fila, error) {

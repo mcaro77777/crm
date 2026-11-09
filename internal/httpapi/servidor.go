@@ -13,6 +13,7 @@ import (
 	"crm-api/internal/configuracion"
 	"crm-api/internal/despacho"
 	"crm-api/internal/eventos"
+	"crm-api/internal/handoff"
 	"crm-api/internal/version"
 )
 
@@ -23,6 +24,7 @@ type Servidor struct {
 	bus       *eventos.Bus
 	limite    *limitadorIntentos
 	despachos *despacho.Repositorio
+	handoffs  *handoff.Servicio
 	limiteBot *limitadorIntentos
 	fallosBot *limitadorIntentos
 }
@@ -32,7 +34,7 @@ func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Log
 }
 
 func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) http.Handler {
-	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute)}
+	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), handoffs: handoff.Nuevo(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute)}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.salud)
@@ -55,6 +57,7 @@ func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *sl
 	mux.Handle("GET /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.listarMensajes)))
 	mux.Handle("POST /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.enviarMensaje)))
 	mux.Handle("POST /api/conversations/{id}/read", s.requerirSesion(http.HandlerFunc(s.marcarConversacionLeida)))
+	mux.Handle("PATCH /api/conversations/{id}/agent", s.requerirSesion(http.HandlerFunc(s.cambiarResponsableConversacion)))
 	mux.Handle("GET /api/events", s.requerirSesion(http.HandlerFunc(s.eventosSSE)))
 
 	mux.Handle("GET /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.obtenerAjustesWhatsApp)))
@@ -77,6 +80,7 @@ func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *sl
 	mux.Handle("GET /api/bot/profile", s.requerirBot(http.HandlerFunc(s.perfilBot)))
 	mux.Handle("GET /api/bot/context", s.requerirBot(http.HandlerFunc(s.contextoBot)))
 	mux.Handle("POST /api/bot/messages", s.requerirBot(http.HandlerFunc(s.mensajeBot)))
+	mux.Handle("POST /api/bot/handoff", s.requerirBot(http.HandlerFunc(s.handoffBot)))
 	mux.Handle("POST /api/bot/llm/{ruta...}", s.requerirBot(http.HandlerFunc(s.proxyLLM)))
 
 	mux.HandleFunc("GET /api/webhooks/wa/{token}", s.verificarWebhookWhatsApp)

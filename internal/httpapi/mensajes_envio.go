@@ -81,6 +81,13 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 	if !prueba && (!ultimoEntrante.Valid || time.Since(ultimoEntrante.Time.UTC()) > 24*time.Hour) {
 		return mensajeDTO{}, &errorEnvio{409, "window_closed", "La ventana de WhatsApp esta cerrada"}
 	}
+	if !generadoIA {
+		estado, cambio, err := s.handoffs.Tomar(ctx, org, conversacionID, "manual_reply", time.Now().UTC())
+		if err != nil {
+			return mensajeDTO{}, err
+		}
+		s.publicarResponsable(org, conversacionID, estado, cambio)
+	}
 
 	var waID any
 	if !prueba {
