@@ -68,7 +68,13 @@ func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, log
 	mux.Handle("POST /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.enviarMensaje)))
 	mux.Handle("POST /api/conversations/{id}/read", s.requerirSesion(http.HandlerFunc(s.marcarConversacionLeida)))
 	mux.Handle("PATCH /api/conversations/{id}/agent", s.requerirSesion(http.HandlerFunc(s.cambiarResponsableConversacion)))
+	mux.Handle("GET /api/conversations/{id}/notes", s.requerirSesion(http.HandlerFunc(s.listarNotas)))
+	mux.Handle("POST /api/conversations/{id}/notes", s.requerirSesion(http.HandlerFunc(s.crearNota)))
 	mux.Handle("GET /api/events", s.requerirSesion(http.HandlerFunc(s.eventosSSE)))
+	mux.Handle("GET /api/quick-replies", s.requerirSesion(http.HandlerFunc(s.listarRespuestasRapidas)))
+	mux.Handle("POST /api/quick-replies", s.requerirSesion(http.HandlerFunc(s.crearRespuestaRapida)))
+	mux.Handle("PATCH /api/quick-replies/{id}", s.requerirSesion(http.HandlerFunc(s.actualizarRespuestaRapida)))
+	mux.Handle("DELETE /api/quick-replies/{id}", s.requerirSesion(http.HandlerFunc(s.eliminarRespuestaRapida)))
 
 	mux.Handle("GET /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.obtenerAjustesWhatsApp)))
 	mux.Handle("PUT /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.guardarAjustesWhatsApp)))
