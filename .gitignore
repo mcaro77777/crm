@@ -4,5 +4,3 @@
 bin/
 coverage.out
 *.log
-ClientApp/*
-!ClientApp/README.md
