@@ -29,17 +29,27 @@ type eventoMeta struct {
 					} `json:"profile"`
 					WAID string `json:"wa_id"`
 				} `json:"contacts"`
-				Messages []struct {
-					From, ID, Timestamp, Type string
-					Text                      struct {
-						Body string `json:"body"`
-					} `json:"text"`
-					Referral *struct{ SourceID, Headline, Body, CTWAClid string } `json:"referral"`
-				} `json:"messages"`
+				Messages []mensajeMeta                            `json:"messages"`
 				Statuses []struct{ ID, Status, Timestamp string } `json:"statuses"`
 			} `json:"value"`
 		} `json:"changes"`
 	} `json:"entry"`
+}
+
+type mensajeMeta struct {
+	From      string `json:"from"`
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Type      string `json:"type"`
+	Text      struct {
+		Body string `json:"body"`
+	} `json:"text"`
+	Referral *struct {
+		SourceID string `json:"source_id"`
+		Headline string `json:"headline"`
+		Body     string `json:"body"`
+		CTWAClid string `json:"ctwa_clid"`
+	} `json:"referral"`
 }
 
 func (s *Servidor) verificarWebhookWhatsApp(w http.ResponseWriter, r *http.Request) {
@@ -122,13 +132,7 @@ func (s *Servidor) procesarEventoWhatsApp(ctx context.Context, organizacionID st
 	return nil
 }
 
-func (s *Servidor) guardarMensajeEntrante(ctx context.Context, organizacionID, nombre string, mensaje struct {
-	From, ID, Timestamp, Type string
-	Text                      struct {
-		Body string `json:"body"`
-	} `json:"text"`
-	Referral *struct{ SourceID, Headline, Body, CTWAClid string } `json:"referral"`
-}) error {
+func (s *Servidor) guardarMensajeEntrante(ctx context.Context, organizacionID, nombre string, mensaje mensajeMeta) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -157,10 +161,10 @@ func (s *Servidor) guardarMensajeEntrante(ctx context.Context, organizacionID, n
 		}
 		leadID, _ := identificadores.Nuevo("ld")
 		eventoID, _ := identificadores.Nuevo("lse")
-		if _, err = tx.ExecContext(ctx, "INSERT INTO lead (id,organization_id,contact_id,stage_id,position,last_activity_at,created_at,updated_at) VALUES (?,?,?,?,0,?,?,?)", leadID, organizacionID, contactoID, etapaID, marca, ahora, ahora); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO `lead` (id,organization_id,contact_id,stage_id,position,last_activity_at,created_at,updated_at) VALUES (?,?,?,?,0,?,?,?)", leadID, organizacionID, contactoID, etapaID, marca, ahora, ahora); err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, "INSERT INTO lead_stage_event (id,organization_id,lead_id,contact_id,to_stage_id,to_stage_name,to_stage_kind,occurred_at,source,created_at) VALUES (?,?,?,?,?,?,?,?, 'sistema',?)", eventoID, organizacionID, leadID, contactoID, etapaID, etapaNombre, etapaTipo, marca, ahora); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO `lead_stage_event` (id,organization_id,lead_id,contact_id,to_stage_id,to_stage_name,to_stage_kind,occurred_at,source,created_at) VALUES (?,?,?,?,?,?,?,?, 'sistema',?)", eventoID, organizacionID, leadID, contactoID, etapaID, etapaNombre, etapaTipo, marca, ahora); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -189,12 +193,22 @@ func (s *Servidor) guardarMensajeEntrante(ctx context.Context, organizacionID, n
 	if err != nil {
 		return err
 	}
+	filas, _ := resultado.RowsAffected()
+	if filas == 0 {
+		// El wa_message_id ya existe. El rollback revierte también el aumento
+		// de no leídos y cualquier actualización de actividad realizada arriba.
+		return nil
+	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	filas, _ := resultado.RowsAffected()
-	if filas > 0 {
-		s.bus.Publicar(organizacionID, "message.new", map[string]string{"conversationId": conversacionID, "messageId": mensajeID})
+	s.bus.Publicar(organizacionID, "message.new", map[string]string{"conversationId": conversacionID, "messageId": mensajeID})
+	ctxDespacho, cancelar := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancelar()
+	if err := s.encolarMensajeEntrante(ctxDespacho, organizacionID, conversacionID, mensajeID, ahora); err != nil {
+		// Bandeja primero: un fallo posterior al commit nunca convierte el
+		// webhook en error ni hace desaparecer el mensaje ya guardado.
+		s.logger.Error("mensaje guardado sin poder encolar despacho", "organizacion", organizacionID, "conversacion", conversacionID, "error", err)
 	}
 	return nil
 }

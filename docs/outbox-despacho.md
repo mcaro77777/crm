@@ -22,5 +22,11 @@ Garantías implementadas:
 La prueba `TestIntegracionOutboxMySQL` se activa con `TEST_DATABASE_DSN` y
 comprueba las consultas específicas de MySQL sobre un esquema real.
 
-El siguiente paso es llamar a `Repositorio.Encolar` después de confirmar el
-mensaje entrante en la base de datos.
+La ingesta de WhatsApp llama a `Repositorio.Encolar` únicamente después de
+confirmar el mensaje en MySQL. Antes comprueba agente encendido, IA activa,
+ausencia de handoff, contacto sin pausa, conversación real y configuración del
+cerebro. Un fallo del outbox se registra, pero nunca borra el mensaje ni
+convierte en error el webhook ya persistido.
+
+La prueba `TestIntegracionWebhookGuardaAntesDeEncolar` comprueba además que un
+`wa_message_id` duplicado no incrementa no leídos ni duplica el despacho.

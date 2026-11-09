@@ -11,16 +11,18 @@ import (
 	"time"
 
 	"crm-api/internal/configuracion"
+	"crm-api/internal/despacho"
 	"crm-api/internal/eventos"
 	"crm-api/internal/version"
 )
 
 type Servidor struct {
-	cfg    configuracion.Configuracion
-	db     *sql.DB
-	logger *slog.Logger
-	bus    *eventos.Bus
-	limite *limitadorIntentos
+	cfg       configuracion.Configuracion
+	db        *sql.DB
+	logger    *slog.Logger
+	bus       *eventos.Bus
+	limite    *limitadorIntentos
+	despachos *despacho.Repositorio
 }
 
 func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger) http.Handler {
@@ -28,7 +30,7 @@ func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Log
 }
 
 func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) http.Handler {
-	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute)}
+	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db)}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.salud)
