@@ -46,17 +46,28 @@ func (w *Worker) Ejecutar(ctx context.Context) {
 
 func (w *Worker) tanda(ctx context.Context) {
 	for i := 0; i < 10; i++ {
-		fila, err := w.repo.TomarUno(ctx, time.Now().UTC())
+		procesado, err := w.ProcesarUnaVez(ctx)
 		if err != nil {
 			w.logger.Error("fallo al reclamar despacho", "error", err)
 			return
 		}
-		if fila == nil {
+		if !procesado {
 			return
 		}
-		w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
-		w.procesar(ctx, *fila)
 	}
+}
+
+// ProcesarUnaVez reclama y procesa como maximo un despacho. El servicio usa
+// esta misma operacion en su barrido; exponerla permite un arnes determinista
+// para releases sin duplicar la logica del worker.
+func (w *Worker) ProcesarUnaVez(ctx context.Context) (bool, error) {
+	fila, err := w.repo.TomarUno(ctx, time.Now().UTC())
+	if err != nil || fila == nil {
+		return false, err
+	}
+	w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
+	w.procesar(ctx, *fila)
+	return true, nil
 }
 
 func (w *Worker) procesar(ctx context.Context, fila Fila) {

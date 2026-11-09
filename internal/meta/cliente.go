@@ -15,14 +15,24 @@ import (
 type Cliente struct {
 	Token   string
 	Version string
+	BaseURL string
 	HTTP    *http.Client
 }
 
 func Nuevo(token, version string) *Cliente {
+	return NuevoConBaseURL(token, version, "https://graph.facebook.com")
+}
+
+// NuevoConBaseURL conserva Graph como valor productivo y permite que los
+// arneses integrales sustituyan exclusivamente el transporte HTTP.
+func NuevoConBaseURL(token, version, baseURL string) *Cliente {
 	if version == "" {
 		version = "v25.0"
 	}
-	return &Cliente{Token: token, Version: version, HTTP: &http.Client{Timeout: 15 * time.Second}}
+	if strings.TrimSpace(baseURL) == "" {
+		baseURL = "https://graph.facebook.com"
+	}
+	return &Cliente{Token: token, Version: version, BaseURL: strings.TrimRight(baseURL, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}}
 }
 
 func (c *Cliente) Ejecutar(ctx context.Context, metodo, ruta string, entrada, salida any) error {
@@ -34,7 +44,7 @@ func (c *Cliente) Ejecutar(ctx context.Context, metodo, ruta string, entrada, sa
 		}
 		cuerpo = bytes.NewReader(datos)
 	}
-	u := "https://graph.facebook.com/" + strings.Trim(c.Version, "/") + "/" + strings.TrimLeft(ruta, "/")
+	u := c.BaseURL + "/" + strings.Trim(c.Version, "/") + "/" + strings.TrimLeft(ruta, "/")
 	req, err := http.NewRequestWithContext(ctx, metodo, u, cuerpo)
 	if err != nil {
 		return err

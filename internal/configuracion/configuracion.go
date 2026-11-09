@@ -24,6 +24,7 @@ type Configuracion struct {
 	VidaMaximaConexion     time.Duration
 	DirectorioCliente      string
 	DirectorioMedios       string
+	MetaGraphBaseURL       string
 }
 
 func Cargar() (Configuracion, error) {
@@ -35,6 +36,7 @@ func Cargar() (Configuracion, error) {
 		SecretoAutenticacion: os.Getenv("AUTH_SECRET"),
 		DirectorioCliente:    valor("CLIENT_APP_DIR", "ClientApp"),
 		DirectorioMedios:     valor("MEDIA_DIR", ".dev-media"),
+		MetaGraphBaseURL:     valor("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
 	}
 
 	var err error
@@ -64,6 +66,9 @@ func Cargar() (Configuracion, error) {
 	}
 	if _, err := url.ParseRequestURI(cfg.URLBase); err != nil {
 		return cfg, fmt.Errorf("APP_BASE_URL invalida: %w", err)
+	}
+	if u, err := url.ParseRequestURI(cfg.MetaGraphBaseURL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return cfg, errors.New("META_GRAPH_BASE_URL debe ser una URL HTTP o HTTPS valida")
 	}
 	if llave := strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")); llave != "" {
 		cfg.LlaveCifrado, err = base64.StdEncoding.DecodeString(llave)

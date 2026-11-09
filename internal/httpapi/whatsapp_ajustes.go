@@ -84,7 +84,7 @@ func (s *Servidor) guardarAjustesWhatsApp(w http.ResponseWriter, r *http.Request
 	if entrada.Version == "" {
 		entrada.Version = "v25.0"
 	}
-	telefono, err := meta.Nuevo(entrada.Token, entrada.Version).ConsultarTelefono(r.Context(), entrada.TelefonoID)
+	telefono, err := s.clienteMeta(entrada.Token, entrada.Version).ConsultarTelefono(r.Context(), entrada.TelefonoID)
 	if err != nil {
 		responderError(w, 422, "meta_connection_failed", err.Error(), nil)
 		return
@@ -139,7 +139,7 @@ func (s *Servidor) probarWhatsApp(w http.ResponseWriter, r *http.Request) {
 		responderError(w, 409, "whatsapp_not_configured", "WhatsApp no esta configurado", nil)
 		return
 	}
-	telefono, err := meta.Nuevo(cred.Token, cred.Version).ConsultarTelefono(r.Context(), cred.TelefonoID)
+	telefono, err := s.clienteMeta(cred.Token, cred.Version).ConsultarTelefono(r.Context(), cred.TelefonoID)
 	if err != nil {
 		responderError(w, 502, "meta_connection_failed", err.Error(), nil)
 		return
@@ -158,6 +158,10 @@ func (s *Servidor) eliminarAjustesWhatsApp(w http.ResponseWriter, r *http.Reques
 }
 
 type credencialMeta struct{ Token, TelefonoID, WABAID, Version string }
+
+func (s *Servidor) clienteMeta(token, version string) *meta.Cliente {
+	return meta.NuevoConBaseURL(token, version, s.cfg.MetaGraphBaseURL)
+}
 
 func (s *Servidor) credencialMeta(ctx context.Context, organizacionID string) (credencialMeta, error) {
 	var c credencialMeta

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"crm-api/internal/identificadores"
-	"crm-api/internal/meta"
 )
 
 type enviarMensajeBody struct {
@@ -95,7 +94,7 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 		if err != nil {
 			return mensajeDTO{}, &errorEnvio{409, "whatsapp_not_configured", "Configura WhatsApp antes de enviar"}
 		}
-		id, err := meta.Nuevo(cred.Token, cred.Version).EnviarTexto(ctx, cred.TelefonoID, identidad, texto)
+		id, err := s.clienteMeta(cred.Token, cred.Version).EnviarTexto(ctx, cred.TelefonoID, identidad, texto)
 		if err != nil {
 			return mensajeDTO{}, &errorEnvio{502, "meta_send_failed", err.Error()}
 		}
