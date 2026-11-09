@@ -23,6 +23,8 @@ type Servidor struct {
 	bus       *eventos.Bus
 	limite    *limitadorIntentos
 	despachos *despacho.Repositorio
+	limiteBot *limitadorIntentos
+	fallosBot *limitadorIntentos
 }
 
 func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger) http.Handler {
@@ -30,7 +32,7 @@ func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Log
 }
 
 func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) http.Handler {
-	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db)}
+	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute)}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.salud)
@@ -71,6 +73,11 @@ func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *sl
 	mux.Handle("POST /api/kb", s.requerirSesion(http.HandlerFunc(s.crearConocimiento)))
 	mux.Handle("PATCH /api/kb/{id}", s.requerirSesion(http.HandlerFunc(s.actualizarConocimiento)))
 	mux.Handle("DELETE /api/kb/{id}", s.requerirSesion(http.HandlerFunc(s.eliminarConocimiento)))
+
+	mux.Handle("GET /api/bot/profile", s.requerirBot(http.HandlerFunc(s.perfilBot)))
+	mux.Handle("GET /api/bot/context", s.requerirBot(http.HandlerFunc(s.contextoBot)))
+	mux.Handle("POST /api/bot/messages", s.requerirBot(http.HandlerFunc(s.mensajeBot)))
+	mux.Handle("POST /api/bot/llm/{ruta...}", s.requerirBot(http.HandlerFunc(s.proxyLLM)))
 
 	mux.HandleFunc("GET /api/webhooks/wa/{token}", s.verificarWebhookWhatsApp)
 	mux.HandleFunc("POST /api/webhooks/wa/{token}", s.recibirWebhookWhatsApp)
