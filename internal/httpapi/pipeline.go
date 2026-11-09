@@ -149,6 +149,12 @@ func (s *Servidor) moverLead(w http.ResponseWriter, r *http.Request) {
 		s.errorInterno(w, "registrar movimiento", err)
 		return
 	}
+	if nuevoTipo == "won" {
+		if err = encolarConversionTx(r.Context(), tx, sesion.OrganizacionID, contactoID, "Purchase", ahora); err != nil {
+			s.errorInterno(w, "encolar conversión", err)
+			return
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		s.errorInterno(w, "confirmar movimiento", err)
 		return

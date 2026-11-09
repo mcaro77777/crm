@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"crm-api/internal/basedatos"
+	"crm-api/internal/capi"
 	"crm-api/internal/configuracion"
 	"crm-api/internal/despacho"
 	"crm-api/internal/eventos"
@@ -51,6 +52,9 @@ func ejecutar() error {
 		return err
 	}
 	defer db.Close()
+	if err := capi.AsegurarEsquema(ctx, db); err != nil {
+		return err
+	}
 	if comando == "check-db" {
 		fmt.Println("Base crm accesible y esquema completo (36 tablas).")
 		return nil
@@ -63,6 +67,8 @@ func ejecutar() error {
 	manejador, procesarWebhook := httpapi.NuevoServidorConProcesador(cfg, db, logger, bus)
 	workerWebhooks := webhooks.NuevoWorker(db, procesarWebhook, logger)
 	go workerWebhooks.Ejecutar(contextoWorker)
+	workerCAPI := capi.NuevoWorker(db, cfg.LlaveCifrado, cfg.MetaGraphBaseURL, logger)
+	go workerCAPI.Ejecutar(contextoWorker)
 	defer detenerWorker()
 
 	servidor := &http.Server{

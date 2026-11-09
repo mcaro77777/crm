@@ -107,3 +107,77 @@ func (c *Cliente) EnviarTexto(ctx context.Context, telefonoID, destinatario, tex
 	}
 	return salida.Messages[0].ID, nil
 }
+
+type Plantilla struct {
+	ID          string `json:"id"`
+	Nombre      string `json:"name"`
+	Idioma      string `json:"language"`
+	Categoria   string `json:"category"`
+	Estado      string `json:"status"`
+	Componentes []struct {
+		Tipo  string `json:"type"`
+		Texto string `json:"text"`
+	} `json:"components"`
+}
+
+func (c *Cliente) ListarPlantillas(ctx context.Context, wabaID string) ([]Plantilla, error) {
+	var salida struct {
+		Data []Plantilla `json:"data"`
+	}
+	err := c.Ejecutar(ctx, http.MethodGet, url.PathEscape(wabaID)+"/message_templates?limit=250", nil, &salida)
+	return salida.Data, err
+}
+
+func (c *Cliente) EnviarPlantilla(ctx context.Context, telefonoID, destinatario, nombre, idioma string) (string, error) {
+	entrada := map[string]any{"messaging_product": "whatsapp", "to": destinatario, "type": "template", "template": map[string]any{"name": nombre, "language": map[string]string{"code": idioma}}}
+	var salida struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+	}
+	if err := c.Ejecutar(ctx, http.MethodPost, url.PathEscape(telefonoID)+"/messages", entrada, &salida); err != nil {
+		return "", err
+	}
+	if len(salida.Messages) == 0 {
+		return "", fmt.Errorf("Meta no devolvio el identificador del mensaje")
+	}
+	return salida.Messages[0].ID, nil
+}
+
+type Medio struct {
+	URL, MIME string
+	Tamano    int64
+	Datos     []byte
+}
+
+func (c *Cliente) DescargarMedio(ctx context.Context, id string, max int64) (Medio, error) {
+	var info struct {
+		URL    string `json:"url"`
+		MIME   string `json:"mime_type"`
+		Tamano int64  `json:"file_size"`
+	}
+	if err := c.Ejecutar(ctx, http.MethodGet, url.PathEscape(id), nil, &info); err != nil {
+		return Medio{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.URL, nil)
+	if err != nil {
+		return Medio{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return Medio{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode/100 != 2 {
+		return Medio{}, fmt.Errorf("descarga Meta respondio %d", res.StatusCode)
+	}
+	datos, err := io.ReadAll(io.LimitReader(res.Body, max+1))
+	if err != nil {
+		return Medio{}, err
+	}
+	if int64(len(datos)) > max {
+		return Medio{}, fmt.Errorf("archivo supera el limite de %d bytes", max)
+	}
+	return Medio{URL: info.URL, MIME: info.MIME, Tamano: int64(len(datos)), Datos: datos}, nil
+}

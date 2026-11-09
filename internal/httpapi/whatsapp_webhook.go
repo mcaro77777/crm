@@ -175,6 +175,12 @@ func (s *Servidor) guardarMensajeEntrante(ctx context.Context, organizacionID, n
 			return err
 		}
 	}
+	if mensaje.Referral != nil {
+		atribucion := &atribucionEntrada{CTWAClid: mensaje.Referral.CTWAClid, SourceID: mensaje.Referral.SourceID, Headline: mensaje.Referral.Headline, Body: mensaje.Referral.Body}
+		if err = guardarAtribucionTx(ctx, tx, organizacionID, contactoID, conversacionID, atribucion, ahora); err != nil {
+			return err
+		}
+	}
 	mensajeID, _ := identificadores.Nuevo("msg")
 	texto := mensaje.Text.Body
 	if mensaje.Type != "text" {
