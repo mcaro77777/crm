@@ -45,7 +45,17 @@ func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Log
 	mux.Handle("GET /api/conversations", s.requerirSesion(http.HandlerFunc(s.listarConversaciones)))
 	mux.Handle("GET /api/conversations/{id}", s.requerirSesion(http.HandlerFunc(s.obtenerConversacion)))
 	mux.Handle("GET /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.listarMensajes)))
+	mux.Handle("POST /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.enviarMensaje)))
+	mux.Handle("POST /api/conversations/{id}/read", s.requerirSesion(http.HandlerFunc(s.marcarConversacionLeida)))
 	mux.Handle("GET /api/events", s.requerirSesion(http.HandlerFunc(s.eventosSSE)))
+
+	mux.Handle("GET /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.obtenerAjustesWhatsApp)))
+	mux.Handle("PUT /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.guardarAjustesWhatsApp)))
+	mux.Handle("POST /api/settings/whatsapp/test", s.requerirSesion(http.HandlerFunc(s.probarWhatsApp)))
+	mux.Handle("DELETE /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.eliminarAjustesWhatsApp)))
+
+	mux.HandleFunc("GET /api/webhooks/wa/{token}", s.verificarWebhookWhatsApp)
+	mux.HandleFunc("POST /api/webhooks/wa/{token}", s.recibirWebhookWhatsApp)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		responderError(w, http.StatusNotFound, "not_found", "Ruta API no encontrada", nil)

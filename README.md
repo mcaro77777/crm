@@ -10,7 +10,12 @@ aplicación Docker en Easypanel.
 - primer registro: dueño, organización, pipeline y perfil del agente;
 - contactos y creación atómica de su lead;
 - pipeline con bitácora de movimientos;
-- conversaciones y mensajes de solo lectura;
+- conversaciones, lectura de mensajes y envío de texto por WhatsApp;
+- conexión de WhatsApp Cloud API administrada desde Ajustes;
+- credenciales y App Secret cifrados con AES-256-GCM;
+- webhook oficial de Meta con firma, persistencia y deduplicación;
+- alta automática de contacto, lead, conversación y mensaje entrante;
+- envío de texto desde la bandeja y estados de entrega;
 - eventos en tiempo real con SSE;
 - healthcheck real contra MySQL;
 - aislamiento obligatorio por `organization_id`;
@@ -101,11 +106,19 @@ PATCH /api/leads/{id}/stage
 GET   /api/conversations
 GET   /api/conversations/{id}
 GET   /api/conversations/{id}/messages
+POST  /api/conversations/{id}/messages
+POST  /api/conversations/{id}/read
 GET   /api/events
+GET   /api/settings/whatsapp
+PUT   /api/settings/whatsapp
+POST  /api/settings/whatsapp/test
+DELETE /api/settings/whatsapp
+GET   /api/webhooks/wa/{token}
+POST  /api/webhooks/wa/{token}
 ```
 
-Las rutas de WhatsApp, `/api/bot/*`, envío de mensajes, medios, agenda y
-analítica se implementarán como módulos adicionales sobre esta base. No hay
+Las rutas `/api/bot/*`, medios, plantillas, agenda y analítica se implementarán
+como módulos adicionales sobre esta base. No hay
 handlers ficticios que respondan éxito sin ejecutar la operación.
 
 ## Seguridad relevante

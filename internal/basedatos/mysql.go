@@ -43,6 +43,10 @@ func Abrir(ctx context.Context, cfg configuracion.Configuracion) (*sql.DB, error
 		db.Close()
 		return nil, fmt.Errorf("conectar con MySQL: %w", err)
 	}
+	if err := AsegurarExtensiones(pingCtx, db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err := VerificarEsquema(pingCtx, db); err != nil {
 		db.Close()
 		return nil, err
