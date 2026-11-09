@@ -41,9 +41,14 @@ func (s *Servidor) obtenerAgente(w http.ResponseWriter, r *http.Request) {
 }
 
 type agenteEntrada struct {
-	Habilitado                                                   bool `json:"habilitado"`
-	Nombre, Tono, Instrucciones, ReglasEscalamiento, Saludo, Rol string
-	Herramientas                                                 map[string]bool `json:"herramientas"`
+	Habilitado         bool            `json:"habilitado"`
+	Nombre             string          `json:"nombre"`
+	Tono               string          `json:"tono"`
+	Instrucciones      string          `json:"instrucciones"`
+	ReglasEscalamiento string          `json:"reglasEscalamiento"`
+	Saludo             string          `json:"saludo"`
+	Rol                string          `json:"rol"`
+	Herramientas       map[string]bool `json:"herramientas"`
 }
 
 func (s *Servidor) guardarAgente(w http.ResponseWriter, r *http.Request) {
@@ -79,11 +84,20 @@ func (s *Servidor) guardarAgente(w http.ResponseWriter, r *http.Request) {
 	s.obtenerAgente(w, r)
 }
 
-type conocimientoEntrada struct{ Tipo, Pregunta, Respuesta, Contenido string }
+type conocimientoEntrada struct {
+	Tipo      string `json:"tipo"`
+	Pregunta  string `json:"pregunta"`
+	Respuesta string `json:"respuesta"`
+	Contenido string `json:"contenido"`
+}
 type conocimientoDTO struct {
-	ID, Tipo                       string
-	Pregunta, Respuesta, Contenido *string
-	CreadoEn, ActualizadoEn        time.Time
+	ID            string    `json:"id"`
+	Tipo          string    `json:"tipo"`
+	Pregunta      *string   `json:"pregunta"`
+	Respuesta     *string   `json:"respuesta"`
+	Contenido     *string   `json:"contenido"`
+	CreadoEn      time.Time `json:"creadoEn"`
+	ActualizadoEn time.Time `json:"actualizadoEn"`
 }
 
 func (s *Servidor) listarConocimiento(w http.ResponseWriter, r *http.Request) {
