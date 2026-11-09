@@ -54,6 +54,7 @@ func (w *Worker) tanda(ctx context.Context) {
 		if fila == nil {
 			return
 		}
+		w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
 		w.procesar(ctx, *fila)
 	}
 }
@@ -62,6 +63,7 @@ func (w *Worker) procesar(ctx context.Context, fila Fila) {
 	destino, err := w.destino(ctx, fila.OrganizacionID)
 	if errors.Is(err, ErrSinDestino) {
 		_, _ = w.repo.Descartar(ctx, fila, err.Error(), time.Now().UTC())
+		w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
 		return
 	}
 	if err != nil {
@@ -72,6 +74,7 @@ func (w *Worker) procesar(ctx context.Context, fila Fila) {
 	if err != nil {
 		if errors.Is(err, ErrConversacionAusente) || errors.Is(err, ErrIAPausada) || errors.Is(err, ErrSinMensajes) {
 			_, _ = w.repo.Descartar(ctx, fila, err.Error(), time.Now().UTC())
+			w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
 			return
 		}
 		w.fallo(ctx, fila, true, "no se pudo construir el despacho")
@@ -97,6 +100,7 @@ func (w *Worker) procesar(ctx context.Context, fila Fila) {
 				w.logger.Error("fallo al reencolar mensajes llegados durante el despacho", "conversacion", fila.ConversacionID, "error", err)
 			}
 		}
+		w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
 		return
 	}
 	w.fallo(ctx, fila, resultado.Reintentable, resultado.Detalle)
@@ -114,6 +118,7 @@ func (w *Worker) fallo(ctx context.Context, fila Fila, reintentable bool, detall
 		w.logger.Error("fallo al actualizar despacho", "despacho", fila.ID, "error", err)
 		return
 	}
+	w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
 	if !caduca {
 		return
 	}
@@ -125,6 +130,14 @@ func (w *Worker) fallo(ctx context.Context, fila Fila, reintentable bool, detall
 	if cambio {
 		w.bus.Publicar(fila.OrganizacionID, "conversation.updated", map[string]any{"conversationId": fila.ConversacionID, "aiEnabled": estado.IAHabilitada, "handoffAt": estado.HandoffEn, "handoffReason": estado.Motivo})
 	}
+}
+
+func (w *Worker) publicarEstado(ctx context.Context, organizacionID, conversacionID string) {
+	estado, err := w.repo.Estado(ctx, organizacionID, conversacionID)
+	if err != nil || estado == nil {
+		return
+	}
+	w.bus.Publicar(organizacionID, "dispatch.updated", map[string]any{"conversationId": conversacionID, "dispatch": estado})
 }
 
 func (w *Worker) destino(ctx context.Context, organizacionID string) (Destino, error) {

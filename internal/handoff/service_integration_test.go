@@ -35,7 +35,7 @@ func TestIntegracionHandoffMySQL(t *testing.T) {
 		{"INSERT INTO contact(id,organization_id,channel,wa_identity,name,created_at,updated_at) VALUES ('ct_handoff',?,'whatsapp','56910000000','Cliente',?,?)", []any{org, ahora, ahora}},
 		{"INSERT INTO conversation(id,organization_id,contact_id,channel,ai_enabled,created_at,updated_at) VALUES ('cv_handoff',?,'ct_handoff','whatsapp',1,?,?)", []any{org, ahora, ahora}},
 		{"INSERT INTO agent_profile(id,organization_id,enabled,name,role,created_at,updated_at) VALUES ('ag_handoff',?,1,'Nexa','vendedor',?,?)", []any{org, ahora, ahora}},
-		{"INSERT INTO dispatch(id,organization_id,conversation_id,status,not_before,first_message_at,last_message_at,message_ids,created_at,updated_at) VALUES ('dsp_handoff',?,'cv_handoff','pendiente',?,?,?,JSON_ARRAY('msg_x'),?,?)", []any{org, ahora, ahora, ahora, ahora, ahora}},
+		{"INSERT INTO dispatch(id,organization_id,conversation_id,status,attempts,not_before,first_message_at,last_message_at,leased_until,message_ids,created_at,updated_at) VALUES ('dsp_handoff',?,'cv_handoff','en_vuelo',1,?,?,?,?,JSON_ARRAY('msg_x'),?,?)", []any{org, ahora, ahora, ahora, ahora.Add(time.Hour), ahora, ahora}},
 	}
 	for _, sentencia := range sentencias {
 		if _, err := db.ExecContext(ctx, sentencia.q, sentencia.a...); err != nil {

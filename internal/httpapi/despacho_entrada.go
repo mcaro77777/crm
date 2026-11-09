@@ -25,5 +25,10 @@ func (s *Servidor) encolarMensajeEntrante(ctx context.Context, organizacionID, c
 		return err
 	}
 	_, err = s.despachos.Encolar(ctx, organizacionID, conversacionID, []string{mensajeID}, ahora, false)
+	if err == nil {
+		if estado, estadoErr := s.despachos.Estado(ctx, organizacionID, conversacionID); estadoErr == nil && estado != nil {
+			s.bus.Publicar(organizacionID, "dispatch.updated", map[string]any{"conversationId": conversacionID, "dispatch": estado})
+		}
+	}
 	return err
 }

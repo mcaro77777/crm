@@ -55,6 +55,7 @@ func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *sl
 	mux.Handle("GET /api/conversations", s.requerirSesion(http.HandlerFunc(s.listarConversaciones)))
 	mux.Handle("GET /api/conversations/{id}", s.requerirSesion(http.HandlerFunc(s.obtenerConversacion)))
 	mux.Handle("GET /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.listarMensajes)))
+	mux.Handle("GET /api/conversations/{id}/dispatch", s.requerirSesion(http.HandlerFunc(s.estadoDespachoConversacion)))
 	mux.Handle("POST /api/conversations/{id}/messages", s.requerirSesion(http.HandlerFunc(s.enviarMensaje)))
 	mux.Handle("POST /api/conversations/{id}/read", s.requerirSesion(http.HandlerFunc(s.marcarConversacionLeida)))
 	mux.Handle("PATCH /api/conversations/{id}/agent", s.requerirSesion(http.HandlerFunc(s.cambiarResponsableConversacion)))
