@@ -24,7 +24,11 @@ type Servidor struct {
 }
 
 func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger) http.Handler {
-	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: eventos.NuevoBus(), limite: nuevoLimitadorIntentos(10, 10*time.Minute)}
+	return NuevoServidorConBus(cfg, db, logger, eventos.NuevoBus())
+}
+
+func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) http.Handler {
+	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute)}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.salud)

@@ -13,6 +13,8 @@ import (
 
 	"crm-api/internal/basedatos"
 	"crm-api/internal/configuracion"
+	"crm-api/internal/despacho"
+	"crm-api/internal/eventos"
 	"crm-api/internal/httpapi"
 	"crm-api/internal/version"
 )
@@ -53,9 +55,15 @@ func ejecutar() error {
 		return nil
 	}
 
+	bus := eventos.NuevoBus()
+	contextoWorker, detenerWorker := context.WithCancel(context.Background())
+	worker := despacho.NuevoWorker(db, cfg.LlaveCifrado, bus, logger)
+	go worker.Ejecutar(contextoWorker)
+	defer detenerWorker()
+
 	servidor := &http.Server{
 		Addr:              ":" + cfg.Puerto,
-		Handler:           httpapi.NuevoServidor(cfg, db, logger),
+		Handler:           httpapi.NuevoServidorConBus(cfg, db, logger, bus),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// SSE mantiene conexiones largas; cada acceso a BD tiene sus propios timeouts.
@@ -79,6 +87,7 @@ func ejecutar() error {
 		}
 	case <-senales.Done():
 		logger.Info("apagando servidor")
+		detenerWorker()
 		ctxCierre, cancelar := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancelar()
 		if err := servidor.Shutdown(ctxCierre); err != nil {
