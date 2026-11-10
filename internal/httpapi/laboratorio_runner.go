@@ -14,8 +14,8 @@ import (
 )
 
 // ejecutarCorridaLaboratorio conduce personas guionadas sobre conversaciones
-// is_test. El unico saliente permitido es el callback del cerebro por
-// /api/bot/messages; enviarTextoConversacion evita que toque Meta.
+// is_test. El cerebro integrado persiste sus respuestas, pero
+// enviarTextoConversacion evita que cualquier mensaje toque Meta.
 func (s *Servidor) ejecutarCorridaLaboratorio(ctx context.Context, org, runID string, trabajos []trabajoLaboratorio) {
 	for _, trabajo := range trabajos {
 		if !s.casoSigueEjecutable(ctx, org, trabajo.CasoID) {

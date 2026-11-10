@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"crm-api/internal/eventos"
@@ -15,31 +16,58 @@ import (
 const intervaloBarrido = 2 * time.Second
 
 type Worker struct {
-	db         *sql.DB
-	repo       *Repositorio
-	handoffs   *handoff.Servicio
-	llave      []byte
-	bus        *eventos.Bus
-	logger     *slog.Logger
-	entregador *Entregador
+	db           *sql.DB
+	repo         *Repositorio
+	handoffs     *handoff.Servicio
+	llave        []byte
+	bus          *eventos.Bus
+	logger       *slog.Logger
+	entregador   *Entregador
+	procesador   Procesador
+	concurrencia int
 }
 
+// Procesador ejecuta un turno integrado. La cola sigue siendo responsabilidad
+// de Worker y el procesador nunca confirma ni reclama filas por su cuenta.
+type Procesador func(context.Context, Evento) ResultadoEntrega
+
 func NuevoWorker(db *sql.DB, llave []byte, bus *eventos.Bus, logger *slog.Logger) *Worker {
-	return &Worker{db: db, repo: NuevoRepositorio(db), handoffs: handoff.Nuevo(db), llave: llave, bus: bus, logger: logger, entregador: NuevoEntregador()}
+	return &Worker{db: db, repo: NuevoRepositorio(db), handoffs: handoff.Nuevo(db), llave: llave, bus: bus, logger: logger, entregador: NuevoEntregador(), concurrencia: 1}
+}
+
+func NuevoWorkerIntegrado(db *sql.DB, bus *eventos.Bus, logger *slog.Logger, concurrencia int, procesador Procesador) *Worker {
+	if concurrencia < 1 {
+		concurrencia = 1
+	}
+	return &Worker{db: db, repo: NuevoRepositorio(db), handoffs: handoff.Nuevo(db), bus: bus, logger: logger, procesador: procesador, concurrencia: concurrencia}
 }
 
 // Ejecutar barre el outbox hasta que el contexto se cancele. La durabilidad
 // esta en MySQL: al reiniciar retoma pendientes y leases vencidos.
 func (w *Worker) Ejecutar(ctx context.Context) {
-	ticker := time.NewTicker(intervaloBarrido)
+	var grupo sync.WaitGroup
+	for i := 0; i < w.concurrencia; i++ {
+		grupo.Add(1)
+		go func() { defer grupo.Done(); w.ejecutarHilo(ctx) }()
+	}
+	grupo.Wait()
+}
+
+func (w *Worker) ejecutarHilo(ctx context.Context) {
+	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
-	w.tanda(ctx)
 	for {
+		procesado, err := w.ProcesarUnaVez(ctx)
+		if err != nil && ctx.Err() == nil {
+			w.logger.Error("fallo al reclamar despacho", "error", err)
+		}
+		if procesado {
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			w.tanda(ctx)
 		}
 	}
 }
@@ -71,15 +99,19 @@ func (w *Worker) ProcesarUnaVez(ctx context.Context) (bool, error) {
 }
 
 func (w *Worker) procesar(ctx context.Context, fila Fila) {
-	destino, err := w.destino(ctx, fila.OrganizacionID)
-	if errors.Is(err, ErrSinDestino) {
-		_, _ = w.repo.Descartar(ctx, fila, err.Error(), time.Now().UTC())
-		w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
-		return
-	}
-	if err != nil {
-		w.fallo(ctx, fila, true, "no se pudo leer la configuracion del cerebro")
-		return
+	var destino Destino
+	var err error
+	if w.procesador == nil {
+		destino, err = w.destino(ctx, fila.OrganizacionID)
+		if errors.Is(err, ErrSinDestino) {
+			_, _ = w.repo.Descartar(ctx, fila, err.Error(), time.Now().UTC())
+			w.publicarEstado(ctx, fila.OrganizacionID, fila.ConversacionID)
+			return
+		}
+		if err != nil {
+			w.fallo(ctx, fila, true, "no se pudo leer la configuracion del cerebro")
+			return
+		}
 	}
 	evento, err := ConstruirEvento(ctx, w.db, fila, time.Now().UTC())
 	if err != nil {
@@ -91,7 +123,17 @@ func (w *Worker) procesar(ctx context.Context, fila Fila) {
 		w.fallo(ctx, fila, true, "no se pudo construir el despacho")
 		return
 	}
-	resultado := w.entregador.Entregar(ctx, evento, destino)
+	var resultado ResultadoEntrega
+	ctxTurno, cancelarTurno := context.WithCancel(ctx)
+	latidoTerminado := make(chan struct{})
+	go w.mantenerLease(ctxTurno, cancelarTurno, fila, latidoTerminado)
+	if w.procesador != nil {
+		resultado = w.procesador(ctxTurno, evento)
+	} else {
+		resultado = w.entregador.Entregar(ctxTurno, evento, destino)
+	}
+	cancelarTurno()
+	<-latidoTerminado
 	propio, err := w.repo.RenovarLease(ctx, fila, time.Now().UTC())
 	if err != nil || !propio {
 		return
@@ -115,6 +157,29 @@ func (w *Worker) procesar(ctx context.Context, fila Fila) {
 		return
 	}
 	w.fallo(ctx, fila, resultado.Reintentable, resultado.Detalle)
+}
+
+// mantenerLease impide que una llamada lenta al proveedor sea reclamada por
+// otro worker. Si se pierde la propiedad cancela el turno en curso.
+func (w *Worker) mantenerLease(ctx context.Context, cancelar context.CancelFunc, fila Fila, terminado chan<- struct{}) {
+	defer close(terminado)
+	ticker := time.NewTicker(Lease / 3)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ahora := <-ticker.C:
+			propio, err := w.repo.RenovarLease(ctx, fila, ahora.UTC())
+			if err != nil || !propio {
+				if err != nil && ctx.Err() == nil {
+					w.logger.Error("fallo al renovar lease del despacho", "despacho", fila.ID, "error", err)
+				}
+				cancelar()
+				return
+			}
+		}
+	}
 }
 
 func (w *Worker) fallo(ctx context.Context, fila Fila, reintentable bool, detalle string) {

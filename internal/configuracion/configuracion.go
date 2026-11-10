@@ -26,6 +26,7 @@ type Configuracion struct {
 	DirectorioMedios       string
 	MetaGraphBaseURL       string
 	ZernioBaseURL          string
+	CerebroWorkers         int
 }
 
 func Cargar() (Configuracion, error) {
@@ -59,6 +60,13 @@ func Cargar() (Configuracion, error) {
 		return cfg, err
 	}
 	cfg.VidaMaximaConexion = time.Duration(minutos) * time.Minute
+	cfg.CerebroWorkers, err = entero("BRAIN_WORKERS", 8)
+	if err != nil {
+		return cfg, err
+	}
+	if cfg.CerebroWorkers > 64 {
+		return cfg, errors.New("BRAIN_WORKERS no puede superar 64")
+	}
 
 	if cfg.DSN == "" {
 		return cfg, errors.New("DATABASE_DSN es obligatoria")

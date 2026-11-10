@@ -1,4 +1,4 @@
-// Package despacho define el contrato publico entre Nexora y un cerebro externo.
+// Package despacho define el turno durable que consume el cerebro integrado.
 package despacho
 
 import (
@@ -17,8 +17,8 @@ const (
 	CabeceraOrganizacion = "X-Vocero-Organization"
 )
 
-// Evento es la forma versionable que recibe el cerebro. El orden de los campos
-// es parte del contrato porque la firma se calcula sobre el JSON crudo.
+// Evento es la forma versionable que recibe el procesador. El contrato HTTP
+// legado se conserva para compatibilidad y para sus pruebas de firma.
 type Evento struct {
 	DespachoID    string       `json:"dispatchId"`
 	Organizacion  Organizacion `json:"organization"`

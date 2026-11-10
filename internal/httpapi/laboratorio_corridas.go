@@ -145,16 +145,16 @@ func (s *Servidor) validarCerebroParaLaboratorio(ctx context.Context, org string
 	var disponible bool
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(
 		SELECT 1 FROM agent_profile ap
-		JOIN app_setting u ON u.organization_id=ap.organization_id AND u.clave='brain_dispatch_url'
-		JOIN app_setting k ON k.organization_id=ap.organization_id AND k.clave='brain_api_key'
-		WHERE ap.organization_id=? AND ap.enabled=1 AND COALESCE(u.valor,'')<>''
-		AND k.secret_cipher IS NOT NULL AND k.secret_iv IS NOT NULL AND k.secret_tag IS NOT NULL
+		JOIN ai_credentials ai ON ai.organization_id=ap.organization_id AND ai.status='active'
+		WHERE ap.organization_id=? AND ap.enabled=1
+		AND COALESCE(ai.base_url,'')<>'' AND COALESCE(ai.model,'')<>''
+		AND ai.token_cipher IS NOT NULL AND ai.token_iv IS NOT NULL AND ai.token_tag IS NOT NULL
 	)`, org).Scan(&disponible)
 	if err != nil {
 		return err
 	}
 	if !disponible {
-		return errors.New("conecta el cerebro y enciende el agente antes de ejecutar el Laboratorio")
+		return errors.New("configura la IA y enciende el agente antes de ejecutar el Laboratorio")
 	}
 	return nil
 }

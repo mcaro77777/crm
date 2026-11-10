@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"crm-api/internal/cerebro"
 	"crm-api/internal/configuracion"
 	"crm-api/internal/despacho"
 	"crm-api/internal/eventos"
@@ -29,6 +30,7 @@ type Servidor struct {
 	handoffs  *handoff.Servicio
 	limiteBot *limitadorIntentos
 	fallosBot *limitadorIntentos
+	cerebro   *cerebro.Servicio
 }
 
 func NuevoServidor(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger) http.Handler {
@@ -43,7 +45,12 @@ func NuevoServidorConBus(cfg configuracion.Configuracion, db *sql.DB, logger *sl
 // NuevoServidorConProcesador entrega, ademas del HTTP, la funcion que consume
 // el worker durable de webhooks. Ambos comparten exactamente el mismo dominio.
 func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) (http.Handler, func(context.Context, string, string, []byte) error) {
-	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), handoffs: handoff.Nuevo(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute)}
+	manejador, webhooks, _ := NuevoServidorIntegrado(cfg, db, logger, bus)
+	return manejador, webhooks
+}
+
+func NuevoServidorIntegrado(cfg configuracion.Configuracion, db *sql.DB, logger *slog.Logger, bus *eventos.Bus) (http.Handler, func(context.Context, string, string, []byte) error, despacho.Procesador) {
+	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), handoffs: handoff.Nuevo(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute), cerebro: cerebro.Nuevo(db, cfg.LlaveCifrado)}
 	mux := http.NewServeMux()
 	s.registrarRutasLaboratorio(mux)
 	s.registrarRutasAgenda(mux)
@@ -132,7 +139,7 @@ func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, log
 		responderError(w, http.StatusNotFound, "not_found", "Ruta API no encontrada", nil)
 	})
 	mux.Handle("/", manejadorSPA(cfg.DirectorioCliente))
-	return middlewareBase(logger, cfg.URLBase, !cfg.Produccion(), mux), s.procesarWebhookGuardado
+	return middlewareBase(logger, cfg.URLBase, !cfg.Produccion(), mux), s.procesarWebhookGuardado, s.procesarTurnoIntegrado
 }
 
 func (s *Servidor) procesarWebhookGuardado(ctx context.Context, organizacionID, fuente string, payload []byte) error {

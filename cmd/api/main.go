@@ -62,9 +62,9 @@ func ejecutar() error {
 
 	bus := eventos.NuevoBus()
 	contextoWorker, detenerWorker := context.WithCancel(context.Background())
-	worker := despacho.NuevoWorker(db, cfg.LlaveCifrado, bus, logger)
+	manejador, procesarWebhook, procesarCerebro := httpapi.NuevoServidorIntegrado(cfg, db, logger, bus)
+	worker := despacho.NuevoWorkerIntegrado(db, bus, logger, cfg.CerebroWorkers, procesarCerebro)
 	go worker.Ejecutar(contextoWorker)
-	manejador, procesarWebhook := httpapi.NuevoServidorConProcesador(cfg, db, logger, bus)
 	workerWebhooks := webhooks.NuevoWorker(db, procesarWebhook, logger)
 	go workerWebhooks.Ejecutar(contextoWorker)
 	workerCAPI := capi.NuevoWorker(db, cfg.LlaveCifrado, cfg.MetaGraphBaseURL, logger)

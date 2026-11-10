@@ -14,12 +14,11 @@ func (s *Servidor) encolarMensajeEntrante(ctx context.Context, organizacionID, c
 		FROM conversation cv
 		JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id
 		JOIN agent_profile ap ON ap.organization_id=cv.organization_id
-		JOIN app_setting u ON u.organization_id=cv.organization_id AND u.clave='brain_dispatch_url'
-		JOIN app_setting k ON k.organization_id=cv.organization_id AND k.clave='brain_api_key'
+		JOIN ai_credentials ai ON ai.organization_id=cv.organization_id AND ai.status='active'
 		WHERE cv.organization_id=? AND cv.id=? AND cv.is_test=0
 		  AND cv.ai_enabled=1 AND cv.handoff_at IS NULL AND c.ai_paused=0
-		  AND ap.enabled=1 AND COALESCE(u.valor,'')<>''
-		  AND k.secret_cipher IS NOT NULL AND k.secret_iv IS NOT NULL AND k.secret_tag IS NOT NULL
+		  AND ap.enabled=1 AND COALESCE(ai.base_url,'')<>'' AND COALESCE(ai.model,'')<>''
+		  AND ai.token_cipher IS NOT NULL AND ai.token_iv IS NOT NULL AND ai.token_tag IS NOT NULL
 	)`, organizacionID, conversacionID).Scan(&habilitado)
 	if err != nil || !habilitado {
 		return err

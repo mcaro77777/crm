@@ -1,4 +1,8 @@
-# API pública del cerebro
+# API pública del cerebro (compatibilidad heredada)
+
+> El cerebro productivo se ejecuta actualmente dentro de `crm-api`. Este
+> contrato se conserva para compatibilidad y pruebas; el arranque normal no
+> despacha turnos a un servicio externo.
 
 Esta API permite que un cerebro externo lea el contexto comercial y responda
 sin recibir el token de WhatsApp ni las credenciales del proveedor de IA.
