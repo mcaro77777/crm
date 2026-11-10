@@ -66,11 +66,41 @@ func (s *Servidor) contextoBot(w http.ResponseWriter, r *http.Request) {
 		s.errorInterno(w, "leer lead para cerebro", err)
 		return
 	}
+	citas, err := s.citasDelContexto(r, org, convID)
+	if err != nil {
+		s.errorInterno(w, "leer citas para cerebro", err)
+		return
+	}
 	responderJSON(w, http.StatusOK, map[string]any{
 		"contact":      map[string]any{"id": contactoID, "name": nombre, "identity": identidadDB, "waIdentity": identidadDB, "channel": canal, "phone": telefonoJSON, "ficha": ficha},
 		"conversation": map[string]any{"id": convID, "aiEnabled": iaActiva && !contactoPausado && !handoff.Valid, "handoffAt": handoffJSON, "windowOpen": ventanaAbierta, "windowRemainingMs": restante},
-		"lead":         lead, "adOrigen": nil,
+		"lead":         lead, "appointments": citas, "adOrigen": nil,
 	})
+}
+
+func (s *Servidor) citasDelContexto(r *http.Request, org, conversacionID string) ([]map[string]any, error) {
+	rows, err := s.db.QueryContext(r.Context(), `SELECT id,scheduled_at,duration_minutes,status,meeting_link,is_test FROM booking WHERE organization_id=? AND conversation_id=? AND status='agendada' AND scheduled_at>=? ORDER BY scheduled_at LIMIT 5`, org, conversacionID, time.Now().UTC().Add(-15*time.Minute))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var id, estado string
+		var inicio time.Time
+		var duracion int
+		var enlace sql.NullString
+		var prueba bool
+		if err := rows.Scan(&id, &inicio, &duracion, &estado, &enlace, &prueba); err != nil {
+			return nil, err
+		}
+		var enlaceJSON any
+		if enlace.Valid && !prueba {
+			enlaceJSON = enlace.String
+		}
+		items = append(items, map[string]any{"id": id, "scheduledAt": inicio.UTC(), "durationMinutes": duracion, "status": estado, "meetingLink": enlaceJSON, "test": prueba})
+	}
+	return items, rows.Err()
 }
 
 func (s *Servidor) leadDelContexto(r *http.Request, org, contactoID string) (any, error) {

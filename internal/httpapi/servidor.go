@@ -46,6 +46,7 @@ func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, log
 	s := &Servidor{cfg: cfg, db: db, logger: logger, bus: bus, limite: nuevoLimitadorIntentos(10, 10*time.Minute), despachos: despacho.NuevoRepositorio(db), handoffs: handoff.Nuevo(db), limiteBot: nuevoLimitadorIntentos(1200, time.Minute), fallosBot: nuevoLimitadorIntentos(30, time.Minute)}
 	mux := http.NewServeMux()
 	s.registrarRutasLaboratorio(mux)
+	s.registrarRutasAgenda(mux)
 
 	mux.HandleFunc("GET /api/health", s.salud)
 	mux.HandleFunc("GET /api/version", s.version)

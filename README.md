@@ -113,12 +113,22 @@ GET   /api/settings/whatsapp
 PUT   /api/settings/whatsapp
 POST  /api/settings/whatsapp/test
 DELETE /api/settings/whatsapp
+GET   /api/settings/calendar
+PUT   /api/settings/calendar
+PUT   /api/settings/calendar/google
+PUT   /api/settings/calendar/zoom
+GET   /api/bookings
+POST  /api/bookings
+PATCH /api/bookings/{id}
+GET   /api/bot/availability
+POST  /api/bot/bookings
+PATCH /api/bot/bookings
 GET   /api/webhooks/wa/{token}
 POST  /api/webhooks/wa/{token}
 ```
 
-Las rutas `/api/bot/*`, medios, plantillas, agenda y analítica se implementarán
-como módulos adicionales sobre esta base. No hay
+Las rutas de cerebro, agenda, laboratorio, atribución y analítica ya están
+implementadas. Medios y plantillas continúan como módulos pendientes. No hay
 handlers ficticios que respondan éxito sin ejecutar la operación.
 
 ## Seguridad relevante

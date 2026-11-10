@@ -28,7 +28,27 @@ renderizada y la ruta/modelo del proveedor LLM. Nunca entrega secretos.
 
 Acepta `conversationId`, `identity` o `waIdentity`. Devuelve el contacto, su
 ficha, la conversación, el estado de la ventana y el lead con sus próximas
-etapas permitidas. Toda búsqueda queda limitada a la organización de la clave.
+etapas permitidas. Incluye además `appointments`, con las próximas citas de la
+conversación. Toda búsqueda queda limitada a la organización de la clave.
+
+### `GET /api/bot/availability`
+
+Recibe `conversationId`, calcula huecos según horario semanal, zona horaria,
+duración, buffer, aviso mínimo y reservas existentes, y persiste los IDs de los
+horarios ofrecidos. Requiere la herramienta `agenda` o `agendar` encendida.
+
+### `POST /api/bot/bookings`
+
+Reserva solamente un `slotId` previamente ofrecido a la misma conversación.
+La verificación y la escritura se repiten bajo bloqueo en MySQL para evitar una
+doble reserva. En Laboratorio crea una cita `is_test`, sin tocar Google, Zoom ni
+una agenda real.
+
+### `PATCH /api/bot/bookings`
+
+Reprograma una cita agendada usando otro `slotId` ofrecido. Comprueba la
+organización, la conversación y la disponibilidad antes de actualizar el
+conector externo.
 
 ### `POST /api/bot/messages`
 
