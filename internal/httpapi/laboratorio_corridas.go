@@ -61,6 +61,10 @@ func (s *Servidor) iniciarCorridaLaboratorio(w http.ResponseWriter, r *http.Requ
 		responderError(w, http.StatusConflict, "sin_cerebro", err.Error(), nil)
 		return
 	}
+	if err := s.validarIAParaLaboratorio(r.Context(), sesion.OrganizacionID); err != nil {
+		responderError(w, http.StatusConflict, "sin_ia", err.Error(), nil)
+		return
+	}
 	escenarios, err := s.seleccionarEscenarios(r.Context(), sesion.OrganizacionID, entrada.EscenarioIDs)
 	if err != nil {
 		s.errorInterno(w, "seleccionar escenarios", err)
@@ -151,6 +155,23 @@ func (s *Servidor) validarCerebroParaLaboratorio(ctx context.Context, org string
 	}
 	if !disponible {
 		return errors.New("conecta el cerebro y enciende el agente antes de ejecutar el Laboratorio")
+	}
+	return nil
+}
+
+func (s *Servidor) validarIAParaLaboratorio(ctx context.Context, org string) error {
+	var disponible bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM ai_credentials
+		WHERE organization_id=? AND status='active'
+		AND COALESCE(base_url,'')<>'' AND COALESCE(model,'')<>''
+		AND token_cipher IS NOT NULL AND token_iv IS NOT NULL AND token_tag IS NOT NULL
+	)`, org).Scan(&disponible)
+	if err != nil {
+		return err
+	}
+	if !disponible {
+		return errors.New("configura y activa el proveedor de IA antes de ejecutar el Laboratorio")
 	}
 	return nil
 }

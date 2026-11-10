@@ -41,7 +41,9 @@ func (s *Servidor) estadoIA(ctx context.Context, org string) (iaEstado, error) {
 	if err != nil {
 		return e, err
 	}
-	e.Configurada = true
+	// Una credencial pausada o rechazada no deja listo al agente ni al juez del
+	// Laboratorio, aunque sus datos sigan almacenados para poder corregirlos.
+	e.Configurada = e.Estado == "active"
 	return e, nil
 }
 func (s *Servidor) guardarIA(w http.ResponseWriter, r *http.Request) {
