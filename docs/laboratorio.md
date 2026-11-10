@@ -1,12 +1,12 @@
 # Laboratorio de Nexora
 
-El Laboratorio prueba el cerebro conectado con clientes simulados antes de que
+El Laboratorio prueba el cerebro integrado con clientes simulados antes de que
 atienda conversaciones reales. Se configura y ejecuta desde **Laboratorio** en
 la aplicación; no requiere variables de entorno adicionales.
 
 ## Requisitos
 
-- Cerebro guardado en Ajustes y agente encendido.
+- Proveedor de IA configurado y agente encendido.
 - Credencial de IA activa en Ajustes → IA para el juez.
 - Las tablas base `agent_test_run` y `agent_test_case` del esquema CRM.
 
@@ -17,10 +17,15 @@ corrida, aunque luego se edite su configuración.
 ## Aislamiento
 
 Cada caso crea un contacto sintético archivado y una conversación `is_test=1`.
-El mensaje entrante se entrega al cerebro por el mismo outbox firmado usado en
-producción. Cuando el cerebro responde por `/api/bot/messages`, el emisor guarda
-el mensaje en MySQL y omite completamente la llamada a Meta. Estas conversaciones
-no aparecen en Contactos, Pipeline ni Bandeja.
+El mensaje entrante se entrega al cerebro integrado mediante el mismo outbox
+durable usado en producción. La respuesta se guarda en MySQL y omite
+completamente la llamada a Meta. Estas conversaciones no aparecen en Contactos,
+Pipeline ni Bandeja.
+
+La interfaz consulta el estado cada dos segundos e informa si el turno está en
+cola, si el cerebro está respondiendo o si el juez está evaluando. Después de
+dos minutos ofrece recuperar una corrida que haya quedado abandonada por un
+reinicio del servidor.
 
 ## Evaluación
 

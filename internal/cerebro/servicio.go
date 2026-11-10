@@ -169,7 +169,8 @@ func (s *Servicio) leerContexto(ctx context.Context, org, contacto string) (cont
 		_ = json.Unmarshal([]byte(ficha.String), &c.Ficha)
 	}
 	var pos int
-	err := s.db.QueryRowContext(ctx, `SELECT p.name,p.position FROM lead l JOIN pipeline_stage p ON p.id=l.stage_id AND p.organization_id=l.organization_id WHERE l.organization_id=? AND l.contact_id=?`, org, contacto).Scan(&c.Etapa, &pos)
+	const consultaLead = `SELECT p.name,p.position FROM ` + "`lead`" + ` l JOIN pipeline_stage p ON p.id=l.stage_id AND p.organization_id=l.organization_id WHERE l.organization_id=? AND l.contact_id=?`
+	err := s.db.QueryRowContext(ctx, consultaLead, org, contacto).Scan(&c.Etapa, &pos)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, nil
 	}

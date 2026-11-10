@@ -29,6 +29,10 @@ type corridaLaboratorioDTO struct {
 	Casos          int        `json:"casos"`
 	CasosCompletos int        `json:"casosCompletos"`
 	DeltaAnterior  *int       `json:"deltaAnterior,omitempty"`
+	Etapa          string     `json:"etapa,omitempty"`
+	MensajeEstado  string     `json:"mensajeEstado,omitempty"`
+	Segundos       int        `json:"segundosTranscurridos"`
+	PuedeRecuperar bool       `json:"puedeRecuperar"`
 }
 
 type casoLaboratorioDTO struct {
@@ -237,6 +241,7 @@ func (s *Servidor) listarCorridasLaboratorio(w http.ResponseWriter, r *http.Requ
 			d.Error = &v
 		}
 		d.FinalizadaEn = nuloTiempo(fin)
+		s.enriquecerEstadoCorrida(r.Context(), sesion.OrganizacionID, &d)
 		items = append(items, d)
 	}
 	for i := 0; i+1 < len(items); i++ {
@@ -284,7 +289,60 @@ func (s *Servidor) obtenerCorridaLaboratorio(w http.ResponseWriter, r *http.Requ
 			corrida.CasosCompletos++
 		}
 	}
+	s.enriquecerEstadoCorrida(r.Context(), sesion.OrganizacionID, &corrida)
 	responderJSON(w, http.StatusOK, map[string]any{"corrida": corrida, "casos": casos})
+}
+
+func (s *Servidor) enriquecerEstadoCorrida(ctx context.Context, org string, corrida *corridaLaboratorioDTO) {
+	if corrida == nil {
+		return
+	}
+	fin := time.Now().UTC()
+	if corrida.FinalizadaEn != nil {
+		fin = corrida.FinalizadaEn.UTC()
+	}
+	corrida.Segundos = int(fin.Sub(corrida.IniciadaEn.UTC()).Seconds())
+	if corrida.Segundos < 0 {
+		corrida.Segundos = 0
+	}
+	switch corrida.Estado {
+	case "done":
+		corrida.Etapa, corrida.MensajeEstado = "completada", "El agente respondió y el juez terminó la evaluación."
+		return
+	case "failed":
+		corrida.Etapa, corrida.MensajeEstado = "fallida", "La prueba terminó con un error. Abre el caso para revisar el detalle."
+		if corrida.Error != nil && *corrida.Error != "" {
+			corrida.MensajeEstado = *corrida.Error
+		}
+		return
+	case "running":
+	default:
+		corrida.Etapa, corrida.MensajeEstado = "en_cola", "Preparando los casos de prueba."
+		return
+	}
+
+	var pendientes, procesando, respuestas bool
+	err := s.db.QueryRowContext(ctx, `SELECT
+		EXISTS(SELECT 1 FROM agent_test_case tc JOIN dispatch d ON d.organization_id=tc.organization_id AND d.conversation_id=tc.conversation_id WHERE tc.organization_id=? AND tc.run_id=? AND d.status='pendiente'),
+		EXISTS(SELECT 1 FROM agent_test_case tc JOIN dispatch d ON d.organization_id=tc.organization_id AND d.conversation_id=tc.conversation_id WHERE tc.organization_id=? AND tc.run_id=? AND d.status='en_vuelo'),
+		EXISTS(SELECT 1 FROM agent_test_case tc JOIN message m ON m.organization_id=tc.organization_id AND m.conversation_id=tc.conversation_id WHERE tc.organization_id=? AND tc.run_id=? AND m.direction='out' AND m.ai_generated=1)
+	`, org, corrida.ID, org, corrida.ID, org, corrida.ID).Scan(&pendientes, &procesando, &respuestas)
+	if err != nil {
+		corrida.Etapa, corrida.MensajeEstado = "procesando", "La prueba sigue ejecutándose."
+	} else if procesando {
+		corrida.Etapa, corrida.MensajeEstado = "pensando", "El cerebro integrado está preparando una respuesta."
+	} else if pendientes {
+		corrida.Etapa, corrida.MensajeEstado = "en_cola", "El turno está en cola y será tomado por un worker disponible."
+	} else if respuestas {
+		corrida.Etapa, corrida.MensajeEstado = "evaluando", "El juez está analizando la conversación y preparando el resultado."
+	} else {
+		corrida.Etapa, corrida.MensajeEstado = "esperando", "Esperando la primera respuesta del cerebro integrado."
+	}
+	if corrida.Segundos >= 120 {
+		corrida.PuedeRecuperar = true
+		corrida.Etapa = "demorada"
+		corrida.MensajeEstado = "La prueba está tardando más de lo esperado. Puedes recuperarla sin iniciar otra corrida."
+	}
 }
 
 func (s *Servidor) casosDeCorrida(ctx context.Context, org, runID string) ([]casoLaboratorioDTO, error) {

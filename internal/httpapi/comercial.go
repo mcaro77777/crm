@@ -79,7 +79,8 @@ func (s *Servidor) obtenerAnalitica(w http.ResponseWriter, r *http.Request) {
 
 func calcularAnalitica(ctx context.Context, db *sql.DB, org string, desde, hasta time.Time) (resumenComercial, error) {
 	x := resumenComercial{Desde: desde, Hasta: hasta, PorEtapa: []map[string]any{}, PorFuente: []map[string]any{}}
-	err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT c.id),COUNT(DISTINCT l.id),COUNT(DISTINCT CASE WHEN ps.kind='open' THEN l.id END),COUNT(DISTINCT CASE WHEN ps.kind='won' THEN l.id END),COUNT(DISTINCT CASE WHEN ps.kind='lost' THEN l.id END),COALESCE(SUM(CASE WHEN ps.kind='won' THEN l.amount_cents ELSE 0 END),0) FROM contact c LEFT JOIN lead l ON l.contact_id=c.id AND l.organization_id=c.organization_id LEFT JOIN pipeline_stage ps ON ps.id=l.stage_id AND ps.organization_id=l.organization_id WHERE c.organization_id=? AND c.created_at>=? AND c.created_at<?`, org, desde, hasta).Scan(&x.Contactos, &x.Oportunidades, &x.Abiertas, &x.Ganadas, &x.Perdidas, &x.ValorGanadoCentavos)
+	const consultaResumen = `SELECT COUNT(DISTINCT c.id),COUNT(DISTINCT l.id),COUNT(DISTINCT CASE WHEN ps.kind='open' THEN l.id END),COUNT(DISTINCT CASE WHEN ps.kind='won' THEN l.id END),COUNT(DISTINCT CASE WHEN ps.kind='lost' THEN l.id END),COALESCE(SUM(CASE WHEN ps.kind='won' THEN l.amount_cents ELSE 0 END),0) FROM contact c LEFT JOIN ` + "`lead`" + ` l ON l.contact_id=c.id AND l.organization_id=c.organization_id LEFT JOIN pipeline_stage ps ON ps.id=l.stage_id AND ps.organization_id=l.organization_id WHERE c.organization_id=? AND c.created_at>=? AND c.created_at<?`
+	err := db.QueryRowContext(ctx, consultaResumen, org, desde, hasta).Scan(&x.Contactos, &x.Oportunidades, &x.Abiertas, &x.Ganadas, &x.Perdidas, &x.ValorGanadoCentavos)
 	if err != nil {
 		return x, err
 	}
@@ -87,7 +88,8 @@ func calcularAnalitica(ctx context.Context, db *sql.DB, org string, desde, hasta
 	if err != nil {
 		return x, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT ps.id,ps.name,ps.kind,COUNT(l.id),COALESCE(SUM(l.amount_cents),0) FROM pipeline_stage ps LEFT JOIN lead l ON l.stage_id=ps.id AND l.organization_id=ps.organization_id AND l.created_at>=? AND l.created_at<? WHERE ps.organization_id=? GROUP BY ps.id,ps.name,ps.kind,ps.position ORDER BY ps.position`, desde, hasta, org)
+	const consultaEtapas = `SELECT ps.id,ps.name,ps.kind,COUNT(l.id),COALESCE(SUM(l.amount_cents),0) FROM pipeline_stage ps LEFT JOIN ` + "`lead`" + ` l ON l.stage_id=ps.id AND l.organization_id=ps.organization_id AND l.created_at>=? AND l.created_at<? WHERE ps.organization_id=? GROUP BY ps.id,ps.name,ps.kind,ps.position ORDER BY ps.position`
+	rows, err := db.QueryContext(ctx, consultaEtapas, desde, hasta, org)
 	if err != nil {
 		return x, err
 	}
@@ -101,7 +103,8 @@ func calcularAnalitica(ctx context.Context, db *sql.DB, org string, desde, hasta
 		}
 		x.PorEtapa = append(x.PorEtapa, map[string]any{"id": id, "nombre": nombre, "tipo": tipo, "cantidad": cantidad, "montoCentavos": monto})
 	}
-	rows2, err := db.QueryContext(ctx, `SELECT COALESCE(NULLIF(c.source,''),'sin_fuente'),COUNT(*),COALESCE(SUM(l.amount_cents),0) FROM contact c LEFT JOIN lead l ON l.contact_id=c.id AND l.organization_id=c.organization_id WHERE c.organization_id=? AND c.created_at>=? AND c.created_at<? GROUP BY COALESCE(NULLIF(c.source,''),'sin_fuente') ORDER BY COUNT(*) DESC`, org, desde, hasta)
+	const consultaFuentes = `SELECT COALESCE(NULLIF(c.source,''),'sin_fuente'),COUNT(*),COALESCE(SUM(l.amount_cents),0) FROM contact c LEFT JOIN ` + "`lead`" + ` l ON l.contact_id=c.id AND l.organization_id=c.organization_id WHERE c.organization_id=? AND c.created_at>=? AND c.created_at<? GROUP BY COALESCE(NULLIF(c.source,''),'sin_fuente') ORDER BY COUNT(*) DESC`
+	rows2, err := db.QueryContext(ctx, consultaFuentes, org, desde, hasta)
 	if err != nil {
 		return x, err
 	}
@@ -224,7 +227,8 @@ func (s *Servidor) enviarConversionCAPI(ctx context.Context, org, eventID string
 	var dataset, cifrado, iv, tag, nombre, ctwa, moneda string
 	var creado time.Time
 	var valor sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT cs.dataset_id,cs.token_cipher,cs.token_iv,cs.token_tag,ce.event_name,ce.created_at,COALESCE(aa.ctwa_clid,''),l.amount_cents,COALESCE(l.currency,'USD') FROM conversion_event ce JOIN capi_settings cs ON cs.organization_id=ce.organization_id LEFT JOIN ad_attribution aa ON aa.id=ce.attribution_id AND aa.organization_id=ce.organization_id JOIN conversation cv ON cv.id=ce.conversation_id AND cv.organization_id=ce.organization_id LEFT JOIN lead l ON l.contact_id=cv.contact_id AND l.organization_id=cv.organization_id WHERE ce.organization_id=? AND ce.id=?`, org, eventID).Scan(&dataset, &cifrado, &iv, &tag, &nombre, &creado, &ctwa, &valor, &moneda)
+	const consultaConversion = `SELECT cs.dataset_id,cs.token_cipher,cs.token_iv,cs.token_tag,ce.event_name,ce.created_at,COALESCE(aa.ctwa_clid,''),l.amount_cents,COALESCE(l.currency,'USD') FROM conversion_event ce JOIN capi_settings cs ON cs.organization_id=ce.organization_id LEFT JOIN ad_attribution aa ON aa.id=ce.attribution_id AND aa.organization_id=ce.organization_id JOIN conversation cv ON cv.id=ce.conversation_id AND cv.organization_id=ce.organization_id LEFT JOIN ` + "`lead`" + ` l ON l.contact_id=cv.contact_id AND l.organization_id=cv.organization_id WHERE ce.organization_id=? AND ce.id=?`
+	err := s.db.QueryRowContext(ctx, consultaConversion, org, eventID).Scan(&dataset, &cifrado, &iv, &tag, &nombre, &creado, &ctwa, &valor, &moneda)
 	if err != nil {
 		return err
 	}
