@@ -264,7 +264,8 @@ func (s *Servidor) importarContactosCSV(w http.ResponseWriter, r *http.Request) 
 		s.errorInterno(w, "buscar etapa", err)
 		return
 	}
-	creados, omitidos := 0, 0
+	creados, omitidos, duplicados, invalidos := 0, 0, 0, 0
+	detalles := make([]map[string]any, 0)
 	for linea := 2; ; linea++ {
 		fila, err := lector.Read()
 		if errors.Is(err, io.EOF) {
@@ -272,6 +273,10 @@ func (s *Servidor) importarContactosCSV(w http.ResponseWriter, r *http.Request) 
 		}
 		if err != nil {
 			omitidos++
+			invalidos++
+			if len(detalles) < 100 {
+				detalles = append(detalles, map[string]any{"linea": linea, "motivo": "CSV mal formado"})
+			}
 			continue
 		}
 		valor := func(k string) string {
@@ -288,6 +293,14 @@ func (s *Servidor) importarContactosCSV(w http.ResponseWriter, r *http.Request) 
 		}
 		if nombre == "" || idn == "" || !canalValido(canal) {
 			omitidos++
+			invalidos++
+			motivo := "faltan nombre o identidad"
+			if nombre != "" && idn != "" {
+				motivo = "canal no permitido"
+			}
+			if len(detalles) < 100 {
+				detalles = append(detalles, map[string]any{"linea": linea, "motivo": motivo, "identidad": idn})
+			}
 			continue
 		}
 		ct, _ := identificadores.Nuevo("ct")
@@ -295,18 +308,26 @@ func (s *Servidor) importarContactosCSV(w http.ResponseWriter, r *http.Request) 
 		res, err := s.db.ExecContext(r.Context(), `INSERT IGNORE INTO contact(id,organization_id,channel,wa_identity,phone,name,name_source,source,created_at,updated_at) VALUES (?,?,?,?,?,?,'manual',NULLIF(?,''),?,?)`, ct, sesion.OrganizacionID, canal, idn, valor("telefono"), nombre, valor("fuente"), ahora, ahora)
 		if err != nil {
 			omitidos++
+			invalidos++
+			if len(detalles) < 100 {
+				detalles = append(detalles, map[string]any{"linea": linea, "motivo": "error al guardar", "identidad": idn})
+			}
 			continue
 		}
 		n, _ := res.RowsAffected()
 		if n == 0 {
 			omitidos++
+			duplicados++
+			if len(detalles) < 100 {
+				detalles = append(detalles, map[string]any{"linea": linea, "motivo": "contacto duplicado", "identidad": idn})
+			}
 			continue
 		}
 		ld, _ := identificadores.Nuevo("ld")
-		_, _ = s.db.ExecContext(r.Context(), `INSERT INTO lead(id,organization_id,contact_id,stage_id,position,created_at,updated_at) VALUES (?,?,?,?,0,?,?)`, ld, sesion.OrganizacionID, ct, etapa, ahora, ahora)
+		_, _ = s.db.ExecContext(r.Context(), "INSERT INTO `lead`(id,organization_id,contact_id,stage_id,position,created_at,updated_at) VALUES (?,?,?,?,0,?,?)", ld, sesion.OrganizacionID, ct, etapa, ahora, ahora)
 		creados++
 	}
-	responderJSON(w, 200, map[string]int{"creados": creados, "omitidos": omitidos})
+	responderJSON(w, 200, map[string]any{"creados": creados, "omitidos": omitidos, "duplicados": duplicados, "invalidos": invalidos, "total": creados + omitidos, "detalles": detalles, "detallesTruncados": omitidos > len(detalles)})
 }
 
 func (s *Servidor) buscarGlobal(w http.ResponseWriter, r *http.Request) {

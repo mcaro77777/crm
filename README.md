@@ -10,8 +10,10 @@ aplicación Docker en Easypanel.
 - primer registro: dueño, organización, pipeline y perfil del agente;
 - contactos y creación atómica de su lead;
 - pipeline con bitácora de movimientos;
-- conversaciones, lectura de mensajes y envío de texto por WhatsApp;
+- conversaciones, lectura de mensajes y envío multicanal;
 - conexión de WhatsApp Cloud API administrada desde Ajustes;
+- Instagram y Messenger mediante Meta, y los tres canales sociales mediante
+  Zernio opcional (TikTok requiere Zernio);
 - credenciales y App Secret cifrados con AES-256-GCM;
 - webhook oficial de Meta con firma, persistencia y deduplicación;
 - alta automática de contacto, lead, conversación y mensaje entrante;
@@ -108,11 +110,16 @@ GET   /api/conversations/{id}
 GET   /api/conversations/{id}/messages
 POST  /api/conversations/{id}/messages
 POST  /api/conversations/{id}/read
+PATCH /api/conversations/{id}/assignment
 GET   /api/events
 GET   /api/settings/whatsapp
 PUT   /api/settings/whatsapp
 POST  /api/settings/whatsapp/test
 DELETE /api/settings/whatsapp
+GET   /api/settings/channels
+PUT   /api/settings/channels/{instagram|messenger|tiktok}
+POST  /api/settings/channels/{instagram|messenger|tiktok}/test
+DELETE /api/settings/channels/{instagram|messenger|tiktok}
 GET   /api/settings/calendar
 PUT   /api/settings/calendar
 PUT   /api/settings/calendar/google
@@ -125,11 +132,16 @@ POST  /api/bot/bookings
 PATCH /api/bot/bookings
 GET   /api/webhooks/wa/{token}
 POST  /api/webhooks/wa/{token}
+GET   /api/webhooks/{ig|messenger|tiktok}/{token}
+POST  /api/webhooks/{ig|messenger|tiktok}/{token}
 ```
 
-Las rutas de cerebro, agenda, laboratorio, atribución y analítica ya están
-implementadas. Medios y plantillas continúan como módulos pendientes. No hay
-handlers ficticios que respondan éxito sin ejecutar la operación.
+Las rutas de cerebro, agenda, laboratorio, atribución, analítica y canales
+adicionales ya están implementadas. Los filtros de `GET /api/conversations`
+aceptan `responsable`, `canal`, `fuente`, `desde`, `hasta`, `vencimiento` y las
+vistas `sin_asignar` y `por_vencer`. Consulte `docs/canales-adicionales.md`.
+Medios y plantillas continúan como módulos pendientes. No hay handlers
+ficticios que respondan éxito sin ejecutar la operación.
 
 ## Seguridad relevante
 

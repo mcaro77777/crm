@@ -31,6 +31,15 @@ type conversacionDTO struct {
 	UltimoMensajeJSON  *time.Time     `json:"ultimoMensaje"`
 	NoLeidos           int            `json:"noLeidos"`
 	CreadoEn           time.Time      `json:"creadoEn"`
+	ResponsableID      sql.NullString `json:"-"`
+	ResponsableIDJSON  *string        `json:"responsableId"`
+	Responsable        sql.NullString `json:"-"`
+	ResponsableJSON    *string        `json:"responsable"`
+	Fuente             sql.NullString `json:"-"`
+	FuenteJSON         *string        `json:"fuente"`
+	VentanaExpira      sql.NullTime   `json:"-"`
+	VentanaExpiraJSON  *time.Time     `json:"ventanaExpiraEn"`
+	PorVencer          bool           `json:"porVencer"`
 }
 
 func (c *conversacionDTO) normalizar() {
@@ -50,13 +59,86 @@ func (c *conversacionDTO) normalizar() {
 		v := c.UltimoMensaje.Time
 		c.UltimoMensajeJSON = &v
 	}
+	if c.ResponsableID.Valid {
+		v := c.ResponsableID.String
+		c.ResponsableIDJSON = &v
+	}
+	if c.Responsable.Valid {
+		v := c.Responsable.String
+		c.ResponsableJSON = &v
+	}
+	if c.Fuente.Valid {
+		v := c.Fuente.String
+		c.FuenteJSON = &v
+	}
+	if c.VentanaExpira.Valid {
+		v := c.VentanaExpira.Time
+		c.VentanaExpiraJSON = &v
+	}
 }
 
 func (s *Servidor) listarConversaciones(w http.ResponseWriter, r *http.Request) {
 	sesion := sesionDe(r.Context())
 	limite := numeroConsulta(r, "limit", 50, 1, 200)
 	desde := numeroConsulta(r, "offset", 0, 0, 100000)
-	rows, err := s.db.QueryContext(r.Context(), "SELECT cv.id,cv.contact_id,c.name,cv.channel,c.wa_identity,cv.ai_enabled,cv.handoff_at,cv.handoff_reason,cv.last_inbound_at,cv.last_message_at,cv.unread_count,cv.created_at FROM `conversation` cv JOIN `contact` c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.is_test=0 ORDER BY COALESCE(cv.last_message_at,cv.created_at) DESC LIMIT ? OFFSET ?", sesion.OrganizacionID, limite, desde)
+	venceSQL := `DATE_ADD(cv.last_inbound_at,INTERVAL (CASE WHEN cv.channel='tiktok' THEN 48 ELSE 24 END) HOUR)`
+	consulta := "SELECT cv.id,cv.contact_id,c.name,cv.channel,c.wa_identity,cv.ai_enabled,cv.handoff_at,cv.handoff_reason,cv.last_inbound_at,cv.last_message_at,cv.unread_count,cv.created_at,ca.user_id,u.name,c.source," + venceSQL + ",(" + venceSQL + " BETWEEN UTC_TIMESTAMP(3) AND DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 2 HOUR)) FROM conversation cv JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id LEFT JOIN conversation_assignment ca ON ca.organization_id=cv.organization_id AND ca.conversation_id=cv.id LEFT JOIN user u ON u.id=ca.user_id WHERE cv.organization_id=? AND cv.is_test=0"
+	args := []any{sesion.OrganizacionID}
+	if canal := strings.TrimSpace(r.URL.Query().Get("canal")); canal != "" {
+		if !canalValido(canal) {
+			responderError(w, 422, "validation_error", "Canal invalido", nil)
+			return
+		}
+		consulta += " AND cv.channel=?"
+		args = append(args, canal)
+	}
+	if fuente := strings.TrimSpace(r.URL.Query().Get("fuente")); fuente != "" {
+		if len(fuente) > 64 {
+			responderError(w, 422, "validation_error", "Fuente invalida", nil)
+			return
+		}
+		consulta += " AND COALESCE(c.source,'')=?"
+		args = append(args, fuente)
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		consulta += " AND (c.name LIKE ? OR c.wa_identity LIKE ?)"
+		args = append(args, "%"+q+"%", "%"+q+"%")
+	}
+	responsable := strings.TrimSpace(r.URL.Query().Get("responsable"))
+	vista := strings.TrimSpace(r.URL.Query().Get("vista"))
+	if vista == "sin_asignar" || responsable == "sin_asignar" {
+		consulta += " AND ca.user_id IS NULL"
+	} else if responsable == "yo" {
+		consulta += " AND ca.user_id=?"
+		args = append(args, sesion.UsuarioID)
+	} else if responsable != "" {
+		consulta += " AND ca.user_id=?"
+		args = append(args, responsable)
+	}
+	if vista == "por_vencer" || r.URL.Query().Get("vencimiento") == "por_vencer" {
+		consulta += " AND " + venceSQL + " BETWEEN UTC_TIMESTAMP(3) AND DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 2 HOUR)"
+	}
+	if valor := r.URL.Query().Get("desde"); valor != "" {
+		t, err := time.Parse(time.RFC3339, valor)
+		if err != nil {
+			responderError(w, 422, "validation_error", "Fecha desde invalida", nil)
+			return
+		}
+		consulta += " AND COALESCE(cv.last_message_at,cv.created_at)>=?"
+		args = append(args, t.UTC())
+	}
+	if valor := r.URL.Query().Get("hasta"); valor != "" {
+		t, err := time.Parse(time.RFC3339, valor)
+		if err != nil {
+			responderError(w, 422, "validation_error", "Fecha hasta invalida", nil)
+			return
+		}
+		consulta += " AND COALESCE(cv.last_message_at,cv.created_at)<?"
+		args = append(args, t.UTC())
+	}
+	consulta += " ORDER BY COALESCE(cv.last_message_at,cv.created_at) DESC LIMIT ? OFFSET ?"
+	args = append(args, limite, desde)
+	rows, err := s.db.QueryContext(r.Context(), consulta, args...)
 	if err != nil {
 		s.errorInterno(w, "listar conversaciones", err)
 		return
@@ -65,7 +147,7 @@ func (s *Servidor) listarConversaciones(w http.ResponseWriter, r *http.Request) 
 	items := make([]conversacionDTO, 0)
 	for rows.Next() {
 		var c conversacionDTO
-		if err := rows.Scan(&c.ID, &c.ContactoID, &c.Nombre, &c.Canal, &c.Identidad, &c.IAActiva, &c.HandoffEn, &c.HandoffMotivo, &c.UltimoEntrante, &c.UltimoMensaje, &c.NoLeidos, &c.CreadoEn); err != nil {
+		if err := rows.Scan(&c.ID, &c.ContactoID, &c.Nombre, &c.Canal, &c.Identidad, &c.IAActiva, &c.HandoffEn, &c.HandoffMotivo, &c.UltimoEntrante, &c.UltimoMensaje, &c.NoLeidos, &c.CreadoEn, &c.ResponsableID, &c.Responsable, &c.Fuente, &c.VentanaExpira, &c.PorVencer); err != nil {
 			s.errorInterno(w, "leer conversaciones", err)
 			return
 		}

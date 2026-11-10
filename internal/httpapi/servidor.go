@@ -100,6 +100,10 @@ func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, log
 	mux.Handle("PUT /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.guardarAjustesWhatsApp)))
 	mux.Handle("POST /api/settings/whatsapp/test", s.requerirSesion(http.HandlerFunc(s.probarWhatsApp)))
 	mux.Handle("DELETE /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.eliminarAjustesWhatsApp)))
+	mux.Handle("GET /api/settings/channels", s.requerirSesion(http.HandlerFunc(s.listarAjustesCanales)))
+	mux.Handle("PUT /api/settings/channels/{canal}", s.requerirSesion(http.HandlerFunc(s.guardarAjustesCanal)))
+	mux.Handle("POST /api/settings/channels/{canal}/test", s.requerirSesion(http.HandlerFunc(s.probarAjustesCanal)))
+	mux.Handle("DELETE /api/settings/channels/{canal}", s.requerirSesion(http.HandlerFunc(s.eliminarAjustesCanal)))
 	mux.Handle("GET /api/settings/ai", s.requerirSesion(http.HandlerFunc(s.obtenerIA)))
 	mux.Handle("PUT /api/settings/ai", s.requerirSesion(http.HandlerFunc(s.guardarIA)))
 	mux.Handle("POST /api/settings/ai/test", s.requerirSesion(http.HandlerFunc(s.probarIA)))
@@ -121,6 +125,8 @@ func NuevoServidorConProcesador(cfg configuracion.Configuracion, db *sql.DB, log
 
 	mux.HandleFunc("GET /api/webhooks/wa/{token}", s.verificarWebhookWhatsApp)
 	mux.HandleFunc("POST /api/webhooks/wa/{token}", s.recibirWebhookWhatsApp)
+	mux.HandleFunc("GET /api/webhooks/{canal}/{token}", s.verificarWebhookSocial)
+	mux.HandleFunc("POST /api/webhooks/{canal}/{token}", s.recibirWebhookSocial)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		responderError(w, http.StatusNotFound, "not_found", "Ruta API no encontrada", nil)
@@ -133,6 +139,12 @@ func (s *Servidor) procesarWebhookGuardado(ctx context.Context, organizacionID, 
 	switch fuente {
 	case "whatsapp":
 		return s.procesarEventoWhatsApp(ctx, organizacionID, payload)
+	case "meta_instagram":
+		return s.procesarEventoMetaSocial(ctx, organizacionID, "instagram", payload)
+	case "meta_messenger":
+		return s.procesarEventoMetaSocial(ctx, organizacionID, "messenger", payload)
+	case "zernio":
+		return s.procesarEventoZernio(ctx, organizacionID, payload)
 	default:
 		return fmt.Errorf("fuente de webhook no soportada: %s", fuente)
 	}

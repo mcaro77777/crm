@@ -25,6 +25,7 @@ type Configuracion struct {
 	DirectorioCliente      string
 	DirectorioMedios       string
 	MetaGraphBaseURL       string
+	ZernioBaseURL          string
 }
 
 func Cargar() (Configuracion, error) {
@@ -37,6 +38,7 @@ func Cargar() (Configuracion, error) {
 		DirectorioCliente:    valor("CLIENT_APP_DIR", "ClientApp"),
 		DirectorioMedios:     valor("MEDIA_DIR", ".dev-media"),
 		MetaGraphBaseURL:     valor("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
+		ZernioBaseURL:        valor("ZERNIO_BASE_URL", "https://api.zernio.com/v1"),
 	}
 
 	var err error
@@ -69,6 +71,9 @@ func Cargar() (Configuracion, error) {
 	}
 	if u, err := url.ParseRequestURI(cfg.MetaGraphBaseURL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return cfg, errors.New("META_GRAPH_BASE_URL debe ser una URL HTTP o HTTPS valida")
+	}
+	if u, err := url.ParseRequestURI(cfg.ZernioBaseURL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return cfg, errors.New("ZERNIO_BASE_URL debe ser una URL HTTP o HTTPS valida")
 	}
 	if llave := strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")); llave != "" {
 		cfg.LlaveCifrado, err = base64.StdEncoding.DecodeString(llave)

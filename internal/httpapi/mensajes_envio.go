@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"crm-api/internal/canales"
 	"crm-api/internal/identificadores"
 )
 
@@ -54,8 +55,8 @@ func (s *Servidor) mensajeBot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacionID, texto string, generadoIA bool) (mensajeDTO, error) {
 	texto = strings.TrimSpace(texto)
-	if conversacionID == "" || texto == "" || len([]rune(texto)) > 4096 {
-		return mensajeDTO{}, &errorEnvio{422, "validation_error", "El mensaje debe tener entre 1 y 4096 caracteres"}
+	if conversacionID == "" || texto == "" {
+		return mensajeDTO{}, &errorEnvio{422, "validation_error", "El mensaje no puede estar vacio"}
 	}
 	var identidad, canal string
 	var ultimoEntrante sql.NullTime
@@ -74,11 +75,28 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 	if prueba && !generadoIA {
 		return mensajeDTO{}, &errorEnvio{409, "sandbox_violation", "Una conversacion de prueba no admite envio manual"}
 	}
-	if canal != "whatsapp" && !prueba {
-		return mensajeDTO{}, &errorEnvio{409, "channel_unsupported", "El canal aun no admite envio"}
+	capacidad, soportado := canales.Obtener(canal)
+	if !soportado {
+		return mensajeDTO{}, &errorEnvio{409, "channel_unsupported", "El canal no admite envio"}
 	}
-	if !prueba && (!ultimoEntrante.Valid || time.Since(ultimoEntrante.Time.UTC()) > 24*time.Hour) {
-		return mensajeDTO{}, &errorEnvio{409, "window_closed", "La ventana de WhatsApp esta cerrada"}
+	if len([]rune(texto)) > capacidad.MaxCaracteres {
+		return mensajeDTO{}, &errorEnvio{422, "text_too_long", "El texto supera el limite del canal"}
+	}
+	ventana := capacidad.Ventana
+	if !generadoIA && capacidad.VentanaHumana > 0 {
+		ventana = capacidad.VentanaHumana
+	}
+	if !prueba && (!ultimoEntrante.Valid || time.Since(ultimoEntrante.Time.UTC()) > ventana) {
+		return mensajeDTO{}, &errorEnvio{409, "window_closed", "La ventana de respuesta del canal esta cerrada"}
+	}
+	if !prueba && capacidad.MaxMensajes > 0 && ultimoEntrante.Valid {
+		var enviados int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message WHERE organization_id=? AND conversation_id=? AND direction='out' AND created_at>?`, org, conversacionID, ultimoEntrante.Time.UTC()).Scan(&enviados); err != nil {
+			return mensajeDTO{}, err
+		}
+		if enviados >= capacidad.MaxMensajes {
+			return mensajeDTO{}, &errorEnvio{409, "message_limit", "El canal no admite mas mensajes hasta que el cliente responda"}
+		}
 	}
 	if !generadoIA {
 		estado, cambio, err := s.handoffs.Tomar(ctx, org, conversacionID, "manual_reply", time.Now().UTC())
@@ -90,15 +108,25 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 
 	var waID any
 	if !prueba {
-		cred, err := s.credencialMeta(ctx, org)
-		if err != nil {
-			return mensajeDTO{}, &errorEnvio{409, "whatsapp_not_configured", "Configura WhatsApp antes de enviar"}
+		if canal == "whatsapp" {
+			cred, err := s.credencialMeta(ctx, org)
+			if err != nil {
+				return mensajeDTO{}, &errorEnvio{409, "whatsapp_not_configured", "Configura WhatsApp antes de enviar"}
+			}
+			id, err := s.clienteMeta(cred.Token, cred.Version).EnviarTexto(ctx, cred.TelefonoID, identidad, texto)
+			if err != nil {
+				return mensajeDTO{}, &errorEnvio{502, "meta_send_failed", err.Error()}
+			}
+			waID = id
+		} else {
+			destinatario := strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(identidad, "ig:"), "fb:"), "tt:")
+			fueraVentanaNormal := ultimoEntrante.Valid && time.Since(ultimoEntrante.Time.UTC()) > capacidad.Ventana
+			id, err := s.enviarTextoSocial(ctx, org, canal, destinatario, texto, !generadoIA && fueraVentanaNormal)
+			if err != nil {
+				return mensajeDTO{}, &errorEnvio{502, "channel_send_failed", err.Error()}
+			}
+			waID = id
 		}
-		id, err := s.clienteMeta(cred.Token, cred.Version).EnviarTexto(ctx, cred.TelefonoID, identidad, texto)
-		if err != nil {
-			return mensajeDTO{}, &errorEnvio{502, "meta_send_failed", err.Error()}
-		}
-		waID = id
 	}
 	id, err := identificadores.Nuevo("msg")
 	if err != nil {
