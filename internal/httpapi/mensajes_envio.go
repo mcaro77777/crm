@@ -109,13 +109,9 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 	var waID any
 	if !prueba {
 		if canal == "whatsapp" {
-			cred, err := s.credencialMeta(ctx, org)
+			id, err := s.enviarTextoWhatsApp(ctx, org, identidad, texto)
 			if err != nil {
-				return mensajeDTO{}, &errorEnvio{409, "whatsapp_not_configured", "Configura WhatsApp antes de enviar"}
-			}
-			id, err := s.clienteMeta(cred.Token, cred.Version).EnviarTexto(ctx, cred.TelefonoID, identidad, texto)
-			if err != nil {
-				return mensajeDTO{}, &errorEnvio{502, "meta_send_failed", err.Error()}
+				return mensajeDTO{}, &errorEnvio{502, "whatsapp_send_failed", err.Error()}
 			}
 			waID = id
 		} else {

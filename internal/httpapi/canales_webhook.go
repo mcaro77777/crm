@@ -160,7 +160,7 @@ func (s *Servidor) procesarEventoZernio(ctx context.Context, org string, cuerpo 
 		if canal == "ig" {
 			canal = "instagram"
 		}
-		if canal != "instagram" && canal != "messenger" && canal != "tiktok" {
+		if canal != "instagram" && canal != "messenger" && canal != "tiktok" && canal != "whatsapp" {
 			return fmt.Errorf("plataforma Zernio no soportada: %s", canal)
 		}
 		remitente := textoMapa(e, "sender_id", "senderId", "from", "contact_id")
@@ -220,7 +220,7 @@ func (s *Servidor) guardarMensajeCanal(ctx context.Context, org string, entrada 
 	if entrada.Marca.IsZero() {
 		entrada.Marca = time.Now().UTC()
 	}
-	prefijo := map[string]string{"instagram": "ig:", "messenger": "fb:", "tiktok": "tt:"}[entrada.Canal]
+	prefijo := map[string]string{"instagram": "ig:", "messenger": "fb:", "tiktok": "tt:", "whatsapp": ""}[entrada.Canal]
 	identidad := prefijo + entrada.Remitente
 	externo := entrada.Canal + ":" + entrada.ID
 	tx, err := s.db.BeginTx(ctx, nil)

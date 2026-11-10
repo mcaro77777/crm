@@ -39,6 +39,10 @@ func (s *Servidor) ListarPlantillas(w http.ResponseWriter, r *http.Request) {
 
 func (s *Servidor) SincronizarPlantillas(w http.ResponseWriter, r *http.Request) {
 	ses := sesionDe(r.Context())
+	if s.fuenteWhatsApp(r.Context(), ses.OrganizacionID) == "zernio" {
+		responderError(w, http.StatusConflict, "templates_require_meta", "Las plantillas se administran directamente con Meta oficial. Cambia el transporte de WhatsApp para sincronizarlas", nil)
+		return
+	}
 	cred, err := s.credencialMeta(r.Context(), ses.OrganizacionID)
 	if err != nil {
 		responderError(w, 409, "whatsapp_not_configured", "Configura WhatsApp antes de sincronizar", nil)
@@ -76,6 +80,10 @@ func (s *Servidor) SincronizarPlantillas(w http.ResponseWriter, r *http.Request)
 
 func (s *Servidor) EnviarPlantilla(w http.ResponseWriter, r *http.Request) {
 	ses := sesionDe(r.Context())
+	if s.fuenteWhatsApp(r.Context(), ses.OrganizacionID) == "zernio" {
+		responderError(w, http.StatusConflict, "templates_require_meta", "El envio de plantillas desde Nexora requiere Meta oficial", nil)
+		return
+	}
 	var e struct {
 		PlantillaID string `json:"plantillaId"`
 	}

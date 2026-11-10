@@ -93,13 +93,27 @@ func TestIntegracionCanalesE3MetaZernioYFiltros(t *testing.T) {
 	if err = s.persistirCredencialSocial(ctx, org, credencialCanal{Canal: "tiktok", Fuente: "zernio", CuentaID: "tt_e3", Nombre: "TikTok", Token: "token-zernio", WebhookSecret: "secreto-zernio"}); err != nil {
 		t.Fatal(err)
 	}
+	for clave, valor := range map[string]string{"whatsapp_source": "zernio", "whatsapp_zernio_account_id": "wa_e3", "whatsapp_zernio_name": "WhatsApp Zernio"} {
+		if err = s.guardarAjuste(ctx, org, clave, valor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = s.guardarSecreto(ctx, org, "whatsapp_zernio_token", "token-zernio"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.guardarSecreto(ctx, org, "whatsapp_zernio_webhook_secret", "secreto-zernio"); err != nil {
+		t.Fatal(err)
+	}
 	if err = s.guardarMensajeCanal(ctx, org, mensajeCanalEntrante{Canal: "instagram", Remitente: "persona-ig", Nombre: "Ana IG", ID: "in-ig", Texto: "Hola", Tipo: "text", Marca: ahora}); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.procesarEventoZernio(ctx, org, []byte(`{"platform":"tiktok","account_id":"tt_e3","sender_id":"persona-tt","sender_name":"Luis TT","message_id":"in-tt","text":"Precio","timestamp":"`+ahora.Format(time.RFC3339)+`"}`)); err != nil {
 		t.Fatal(err)
 	}
-	for _, caso := range []struct{ identidad, canal string }{{"ig:persona-ig", "instagram"}, {"tt:persona-tt", "tiktok"}} {
+	if err = s.procesarEventoZernio(ctx, org, []byte(`{"platform":"whatsapp","account_id":"wa_e3","sender_id":"56911111111","sender_name":"Marta WA","message_id":"in-wa","text":"Hola","timestamp":"`+ahora.Format(time.RFC3339)+`"}`)); err != nil {
+		t.Fatal(err)
+	}
+	for _, caso := range []struct{ identidad, canal string }{{"ig:persona-ig", "instagram"}, {"tt:persona-tt", "tiktok"}, {"56911111111", "whatsapp"}} {
 		var conv string
 		if err = db.QueryRowContext(ctx, `SELECT cv.id FROM conversation cv JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND c.wa_identity=?`, org, caso.identidad).Scan(&conv); err != nil {
 			t.Fatal(err)
@@ -108,7 +122,7 @@ func TestIntegracionCanalesE3MetaZernioYFiltros(t *testing.T) {
 			t.Fatalf("enviar %s: %v", caso.canal, err)
 		}
 	}
-	if llamadasMeta.Load() != 1 || llamadasZernio.Load() != 1 {
+	if llamadasMeta.Load() != 1 || llamadasZernio.Load() != 2 {
 		t.Fatalf("transportes incorrectos: meta=%d zernio=%d", llamadasMeta.Load(), llamadasZernio.Load())
 	}
 	var tokenCifrado string

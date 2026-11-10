@@ -295,3 +295,40 @@ func (s *Servidor) enviarTextoSocial(ctx context.Context, org, canal, destinatar
 	}
 	return canal + ":" + salida.MessageID, nil
 }
+
+func (s *Servidor) enviarTextoWhatsApp(ctx context.Context, org, destinatario, texto string) (string, error) {
+	if s.fuenteWhatsApp(ctx, org) == "zernio" {
+		cred, err := s.credencialWhatsAppZernio(ctx, org)
+		if err != nil {
+			return "", errors.New("WhatsApp por Zernio no esta configurado")
+		}
+		datos, err := s.ejecutarZernio(ctx, cred.Token, http.MethodPost, "/messages", map[string]any{
+			"account_id": cred.CuentaID,
+			"platform":   "whatsapp",
+			"recipient":  destinatario,
+			"text":       texto,
+		})
+		if err != nil {
+			return "", err
+		}
+		var salida struct {
+			ID        string `json:"id"`
+			MessageID string `json:"message_id"`
+		}
+		if json.Unmarshal(datos, &salida) != nil {
+			return "", errors.New("Zernio devolvio una respuesta invalida")
+		}
+		if salida.ID == "" {
+			salida.ID = salida.MessageID
+		}
+		if salida.ID == "" {
+			return "", errors.New("Zernio no devolvio el identificador del mensaje")
+		}
+		return "whatsapp:" + salida.ID, nil
+	}
+	cred, err := s.credencialMeta(ctx, org)
+	if err != nil {
+		return "", errors.New("WhatsApp con Meta no esta configurado")
+	}
+	return s.clienteMeta(cred.Token, cred.Version).EnviarTexto(ctx, cred.TelefonoID, destinatario, texto)
+}

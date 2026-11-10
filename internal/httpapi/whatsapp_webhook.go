@@ -73,7 +73,16 @@ func (s *Servidor) recibirWebhookWhatsApp(w http.ResponseWriter, r *http.Request
 		responderError(w, 400, "invalid_body", "No se pudo leer el webhook", nil)
 		return
 	}
-	if secreto, errSecreto := s.leerSecreto(r.Context(), organizacionID, "meta_app_secret"); errSecreto == nil && secreto != "" {
+	fuente := s.fuenteWhatsApp(r.Context(), organizacionID)
+	eventoFuente := "whatsapp"
+	if fuente == "zernio" {
+		credencial, errCredencial := s.credencialWhatsAppZernio(r.Context(), organizacionID)
+		if errCredencial != nil || credencial.WebhookSecret == "" || !firmaWebhookValida(cuerpo, r.Header.Get("X-Zernio-Signature"), credencial.WebhookSecret) {
+			responderError(w, http.StatusUnauthorized, "invalid_signature", "Firma de Zernio invalida", nil)
+			return
+		}
+		eventoFuente = "zernio"
+	} else if secreto, errSecreto := s.leerSecreto(r.Context(), organizacionID, "meta_app_secret"); errSecreto == nil && secreto != "" {
 		firma := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
 		mac := hmac.New(sha256.New, []byte(secreto))
 		_, _ = mac.Write(cuerpo)
@@ -86,7 +95,7 @@ func (s *Servidor) recibirWebhookWhatsApp(w http.ResponseWriter, r *http.Request
 	huella := sha256.Sum256(cuerpo)
 	id, _ := identificadores.Nuevo("whe")
 	ahora := time.Now().UTC()
-	_, err = s.db.ExecContext(r.Context(), `INSERT IGNORE INTO webhook_event (id,organization_id,fuente,payload,huella,status,not_before,created_at,updated_at) VALUES (?,?, 'whatsapp', ?,?,'pendiente',?,?,?)`, id, organizacionID, string(cuerpo), hex.EncodeToString(huella[:]), ahora, ahora, ahora)
+	_, err = s.db.ExecContext(r.Context(), `INSERT IGNORE INTO webhook_event (id,organization_id,fuente,payload,huella,status,not_before,created_at,updated_at) VALUES (?,?,?,?,?,'pendiente',?,?,?)`, id, organizacionID, eventoFuente, string(cuerpo), hex.EncodeToString(huella[:]), ahora, ahora, ahora)
 	if err != nil {
 		responderError(w, 503, "webhook_store_failed", "No se pudo guardar el evento", nil)
 		return

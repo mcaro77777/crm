@@ -11,11 +11,12 @@ aplicación Docker en Easypanel.
 - contactos y creación atómica de su lead;
 - pipeline con bitácora de movimientos;
 - conversaciones, lectura de mensajes y envío multicanal;
-- conexión de WhatsApp Cloud API administrada desde Ajustes;
+- conexión de WhatsApp administrada desde Ajustes, con transporte directo por
+  Meta Cloud API o mediante Zernio;
 - Instagram y Messenger mediante Meta, y los tres canales sociales mediante
   Zernio opcional (TikTok requiere Zernio);
 - credenciales y App Secret cifrados con AES-256-GCM;
-- webhook oficial de Meta con firma, persistencia y deduplicación;
+- webhooks firmados de Meta y Zernio, con persistencia y deduplicación;
 - alta automática de contacto, lead, conversación y mensaje entrante;
 - envío de texto desde la bandeja y estados de entrega;
 - eventos en tiempo real con SSE;
