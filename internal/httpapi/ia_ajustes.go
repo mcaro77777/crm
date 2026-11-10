@@ -3,7 +3,9 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -60,7 +62,7 @@ func (s *Servidor) guardarIA(w http.ResponseWriter, r *http.Request) {
 		responderError(w, 422, "validation_error", "Proveedor, URL, modelo y token son obligatorios", nil)
 		return
 	}
-	if err := probarProveedorIA(r.Context(), e.BaseURL, e.Token); err != nil {
+	if err := probarProveedorIA(r.Context(), e.BaseURL, e.Token, e.Modelo); err != nil {
 		responderError(w, 422, "ai_connection_failed", err.Error(), nil)
 		return
 	}
@@ -93,8 +95,8 @@ func (s *Servidor) guardarIA(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Servidor) probarIA(w http.ResponseWriter, r *http.Request) {
 	sesion := sesionDe(r.Context())
-	var base, cifrado, iv, tag string
-	err := s.db.QueryRowContext(r.Context(), "SELECT base_url,token_cipher,token_iv,token_tag FROM ai_credentials WHERE organization_id=?", sesion.OrganizacionID).Scan(&base, &cifrado, &iv, &tag)
+	var base, modelo, cifrado, iv, tag string
+	err := s.db.QueryRowContext(r.Context(), "SELECT base_url,model,token_cipher,token_iv,token_tag FROM ai_credentials WHERE organization_id=?", sesion.OrganizacionID).Scan(&base, &modelo, &cifrado, &iv, &tag)
 	if err != nil {
 		responderError(w, 409, "ai_not_configured", "Configura la IA primero", nil)
 		return
@@ -104,16 +106,16 @@ func (s *Servidor) probarIA(w http.ResponseWriter, r *http.Request) {
 		s.errorInterno(w, "descifrar IA", err)
 		return
 	}
-	if err := probarProveedorIA(r.Context(), base, token); err != nil {
+	if err := probarProveedorIA(r.Context(), base, token, modelo); err != nil {
 		responderError(w, 502, "ai_connection_failed", err.Error(), nil)
 		return
 	}
 	responderJSON(w, 200, map[string]bool{"ok": true})
 }
-func probarProveedorIA(ctx context.Context, base, token string) error {
-	u, err := url.Parse(base + "/models")
+func probarProveedorIA(ctx context.Context, base, token, modelo string) error {
+	u, err := url.Parse(strings.TrimRight(base, "/") + "/models")
 	if err != nil {
-		return err
+		return fmt.Errorf("la URL base no es válida")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -122,11 +124,41 @@ func probarProveedorIA(ctx context.Context, base, token string) error {
 	req.Header.Set("Authorization", "Bearer "+token)
 	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("no se pudo contactar al proveedor: %w", err)
 	}
 	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("el proveedor respondio %d", res.StatusCode)
+	cuerpo, err := io.ReadAll(io.LimitReader(res.Body, (16<<20)+1))
+	if err != nil {
+		return fmt.Errorf("no se pudo leer la respuesta del proveedor")
 	}
-	return nil
+	if len(cuerpo) > 16<<20 {
+		return fmt.Errorf("la respuesta del proveedor es demasiado grande")
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		var respuestaError struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(cuerpo, &respuestaError)
+		mensaje := strings.TrimSpace(respuestaError.Error.Message)
+		if mensaje == "" {
+			mensaje = http.StatusText(res.StatusCode)
+		}
+		return fmt.Errorf("el proveedor rechazó la conexión (%d): %s", res.StatusCode, mensaje)
+	}
+	var modelos struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(cuerpo, &modelos); err != nil {
+		return fmt.Errorf("el proveedor respondió, pero su listado de modelos no tiene el formato esperado")
+	}
+	for _, disponible := range modelos.Data {
+		if disponible.ID == modelo {
+			return nil
+		}
+	}
+	return fmt.Errorf("la conexión funciona, pero el modelo %q no está disponible para esta API key", modelo)
 }
