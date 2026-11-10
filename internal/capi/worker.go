@@ -84,11 +84,21 @@ func (w *Worker) ProcesarUnaVez(ctx context.Context) (bool, error) {
 	if err != nil || f == nil {
 		return false, err
 	}
-	err = w.enviar(ctx, *f)
+	trace, err := w.enviar(ctx, *f)
 	ahora := w.ahora()
 	if err == nil {
-		_, e := w.db.ExecContext(ctx, `UPDATE conversion_event SET status='sent',error=NULL,sent_at=?,leased_until=NULL,updated_at=? WHERE id=? AND organization_id=? AND status='pending' AND attempts=?`, ahora, ahora, f.id, f.org, f.intentos)
-		return true, e
+		res, e := w.db.ExecContext(ctx, `UPDATE conversion_event SET status='sent',error=NULL,fb_trace_id=?,sent_at=?,leased_until=NULL,updated_at=? WHERE id=? AND organization_id=? AND status='pending' AND attempts=?`, trace, ahora, ahora, f.id, f.org, f.intentos)
+		if e != nil {
+			return true, e
+		}
+		filas, e := res.RowsAffected()
+		if e != nil {
+			return true, e
+		}
+		if filas != 1 {
+			return true, fmt.Errorf("se perdio el arrendamiento del evento CAPI %s", f.id)
+		}
+		return true, nil
 	}
 	detalle := recortar(err.Error())
 	if f.intentos >= MaxIntentos {
@@ -128,27 +138,24 @@ func (w *Worker) tomar(ctx context.Context, ahora time.Time) (*fila, error) {
 	return &f, nil
 }
 
-func (w *Worker) enviar(ctx context.Context, f fila) error {
+func (w *Worker) enviar(ctx context.Context, f fila) (string, error) {
 	var dataset, cifrado, iv, tag, nombre, ctwa, moneda string
 	var creado time.Time
 	var valor sql.NullInt64
-	err := w.db.QueryRowContext(ctx, `SELECT cs.dataset_id,cs.token_cipher,cs.token_iv,cs.token_tag,ce.event_name,ce.created_at,COALESCE(aa.ctwa_clid,''),l.amount_cents,COALESCE(l.currency,'USD') FROM conversion_event ce JOIN capi_settings cs ON cs.organization_id=ce.organization_id AND cs.status='connected' LEFT JOIN ad_attribution aa ON aa.id=ce.attribution_id AND aa.organization_id=ce.organization_id JOIN conversation cv ON cv.id=ce.conversation_id AND cv.organization_id=ce.organization_id LEFT JOIN lead l ON l.contact_id=cv.contact_id AND l.organization_id=cv.organization_id WHERE ce.organization_id=? AND ce.id=?`, f.org, f.id).Scan(&dataset, &cifrado, &iv, &tag, &nombre, &creado, &ctwa, &valor, &moneda)
+	const consulta = `SELECT cs.dataset_id,cs.token_cipher,cs.token_iv,cs.token_tag,ce.event_name,ce.created_at,COALESCE(aa.ctwa_clid,''),l.amount_cents,COALESCE(l.currency,'USD') FROM conversion_event ce JOIN capi_settings cs ON cs.organization_id=ce.organization_id AND cs.status='connected' LEFT JOIN ad_attribution aa ON aa.id=ce.attribution_id AND aa.organization_id=ce.organization_id JOIN conversation cv ON cv.id=ce.conversation_id AND cv.organization_id=ce.organization_id LEFT JOIN ` + "`lead`" + ` l ON l.contact_id=cv.contact_id AND l.organization_id=cv.organization_id WHERE ce.organization_id=? AND ce.id=?`
+	err := w.db.QueryRowContext(ctx, consulta, f.org, f.id).Scan(&dataset, &cifrado, &iv, &tag, &nombre, &creado, &ctwa, &valor, &moneda)
 	if err != nil {
-		return err
+		return "", err
 	}
 	token, err := seguridad.DescifrarSecreto(w.llave, seguridad.SecretoCifrado{Cifrado: cifrado, IV: iv, Tag: tag})
 	if err != nil {
-		return err
+		return "", err
 	}
 	evento := map[string]any{"event_name": nombre, "event_time": creado.Unix(), "action_source": "business_messaging", "event_id": f.id, "user_data": map[string]any{"ctwa_clid": ctwa}}
 	if valor.Valid && valor.Int64 > 0 {
 		evento["custom_data"] = map[string]any{"value": float64(valor.Int64) / 100, "currency": moneda}
 	}
-	trace, err := meta.NuevoConBaseURL(token, "v25.0", w.graph).EnviarEventosCAPI(ctx, dataset, []any{evento})
-	if err == nil {
-		_, _ = w.db.ExecContext(ctx, "UPDATE conversion_event SET fb_trace_id=? WHERE id=? AND organization_id=?", trace, f.id, f.org)
-	}
-	return err
+	return meta.NuevoConBaseURL(token, "v25.0", w.graph).EnviarEventosCAPI(ctx, dataset, []any{evento})
 }
 
 func espera(n int) time.Duration {
