@@ -10,41 +10,6 @@ import (
 	"time"
 )
 
-const esquemaLaboratorio = `
-CREATE TABLE IF NOT EXISTS lab_scenario (
-  id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  organization_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  nombre VARCHAR(160) NOT NULL,
-  persona VARCHAR(255) NOT NULL,
-  objetivo TEXT NOT NULL,
-  turnos JSON NOT NULL,
-  criterios JSON NOT NULL,
-  activo TINYINT NOT NULL DEFAULT 1,
-  created_at DATETIME(3) NOT NULL,
-  updated_at DATETIME(3) NOT NULL,
-  PRIMARY KEY (id),
-  KEY lab_scenario_org_idx (organization_id, activo, updated_at),
-  CONSTRAINT fk_lab_scenario_org FOREIGN KEY (organization_id) REFERENCES organization(id) ON DELETE CASCADE,
-  CONSTRAINT lab_scenario_activo_ck CHECK (activo IN (0,1))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`
-
-const esquemaSnapshotLaboratorio = `
-CREATE TABLE IF NOT EXISTS lab_case_snapshot (
-  case_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  organization_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  scenario_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-  nombre VARCHAR(160) NOT NULL,
-  objetivo TEXT NOT NULL,
-  turnos JSON NOT NULL,
-  criterios JSON NOT NULL,
-  created_at DATETIME(3) NOT NULL,
-  PRIMARY KEY (case_id),
-  KEY lab_case_snapshot_org_idx (organization_id, scenario_id),
-  CONSTRAINT fk_lab_case_snapshot_case FOREIGN KEY (case_id) REFERENCES agent_test_case(id) ON DELETE CASCADE,
-  CONSTRAINT fk_lab_case_snapshot_org FOREIGN KEY (organization_id) REFERENCES organization(id) ON DELETE CASCADE,
-  CONSTRAINT fk_lab_case_snapshot_scenario FOREIGN KEY (scenario_id) REFERENCES lab_scenario(id) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`
-
 type escenarioLaboratorio struct {
 	ID            string    `json:"id"`
 	Nombre        string    `json:"nombre"`
@@ -93,14 +58,6 @@ func limpiarTextos(items []string, maxItems, maxRunas int) []string {
 		}
 	}
 	return salida
-}
-
-func (s *Servidor) asegurarEsquemaLaboratorio(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, esquemaLaboratorio); err != nil {
-		return err
-	}
-	_, err := s.db.ExecContext(ctx, esquemaSnapshotLaboratorio)
-	return err
 }
 
 func escanearEscenario(scanner interface{ Scan(...any) error }) (escenarioLaboratorio, error) {

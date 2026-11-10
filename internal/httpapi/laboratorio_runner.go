@@ -216,10 +216,6 @@ func (s *Servidor) finalizarCorridaLaboratorio(ctx context.Context, org, runID s
 // evaluate permite recuperar una corrida si el proceso se reinicio despues de
 // que el cerebro respondiera. No genera mensajes ni reenvia nada.
 func (s *Servidor) evaluarCorridaLaboratorio(w http.ResponseWriter, r *http.Request) {
-	if err := s.asegurarEsquemaLaboratorio(r.Context()); err != nil {
-		s.errorInterno(w, "asegurar laboratorio", err)
-		return
-	}
 	sesion := sesionDe(r.Context())
 	runID := r.PathValue("id")
 	var estado string

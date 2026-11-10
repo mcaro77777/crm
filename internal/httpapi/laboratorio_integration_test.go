@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"crm-api/internal/basedatos"
 	"crm-api/internal/configuracion"
 	"crm-api/internal/eventos"
 	_ "github.com/go-sql-driver/mysql"
@@ -41,13 +42,13 @@ func TestIntegracionAislamientoLaboratorioE1(t *testing.T) {
 	defer metaFalso.Close()
 
 	ctx := context.Background()
+	if err := basedatos.AsegurarExtensiones(ctx, db); err != nil {
+		t.Fatal(err)
+	}
 	servidor := &Servidor{
 		cfg: configuracion.Configuracion{MetaGraphBaseURL: metaFalso.URL},
 		db:  db, logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		bus: eventos.NuevoBus(),
-	}
-	if err := servidor.asegurarEsquemaLaboratorio(ctx); err != nil {
-		t.Fatal(err)
 	}
 	const org = "org_test_laboratorio_e1"
 	_, _ = db.ExecContext(ctx, "DELETE FROM organization WHERE id=?", org)

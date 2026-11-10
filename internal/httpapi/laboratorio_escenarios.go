@@ -25,10 +25,6 @@ func (s *Servidor) registrarRutasLaboratorio(mux *http.ServeMux) {
 }
 
 func (s *Servidor) listarEscenariosLaboratorio(w http.ResponseWriter, r *http.Request) {
-	if err := s.asegurarEsquemaLaboratorio(r.Context()); err != nil {
-		s.errorInterno(w, "asegurar laboratorio", err)
-		return
-	}
 	sesion := sesionDe(r.Context())
 	rows, err := s.db.QueryContext(r.Context(), `SELECT id,nombre,persona,objetivo,turnos,criterios,activo,created_at,updated_at FROM lab_scenario WHERE organization_id=? ORDER BY activo DESC,updated_at DESC`, sesion.OrganizacionID)
 	if err != nil {
@@ -53,10 +49,6 @@ func (s *Servidor) listarEscenariosLaboratorio(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Servidor) crearEscenarioLaboratorio(w http.ResponseWriter, r *http.Request) {
-	if err := s.asegurarEsquemaLaboratorio(r.Context()); err != nil {
-		s.errorInterno(w, "asegurar laboratorio", err)
-		return
-	}
 	var entrada entradaEscenarioLaboratorio
 	if !decodificarJSON(w, r, &entrada) {
 		return
@@ -91,10 +83,6 @@ func (s *Servidor) crearEscenarioLaboratorio(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Servidor) actualizarEscenarioLaboratorio(w http.ResponseWriter, r *http.Request) {
-	if err := s.asegurarEsquemaLaboratorio(r.Context()); err != nil {
-		s.errorInterno(w, "asegurar laboratorio", err)
-		return
-	}
 	var entrada entradaEscenarioLaboratorio
 	if !decodificarJSON(w, r, &entrada) {
 		return
@@ -134,10 +122,6 @@ func (s *Servidor) actualizarEscenarioLaboratorio(w http.ResponseWriter, r *http
 // Los escenarios se conservan para que una corrida historica siga siendo
 // interpretable. DELETE los desactiva en vez de borrar evidencia.
 func (s *Servidor) desactivarEscenarioLaboratorio(w http.ResponseWriter, r *http.Request) {
-	if err := s.asegurarEsquemaLaboratorio(r.Context()); err != nil {
-		s.errorInterno(w, "asegurar laboratorio", err)
-		return
-	}
 	sesion := sesionDe(r.Context())
 	res, err := s.db.ExecContext(r.Context(), `UPDATE lab_scenario SET activo=0,updated_at=? WHERE organization_id=? AND id=?`, time.Now().UTC(), sesion.OrganizacionID, r.PathValue("id"))
 	if err != nil {

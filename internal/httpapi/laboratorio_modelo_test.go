@@ -34,15 +34,6 @@ func TestEscenarioLaboratorioExigeCasoCompleto(t *testing.T) {
 	}
 }
 
-func TestEsquemaLaboratorioSiempreTieneOrganizacion(t *testing.T) {
-	texto := strings.ToLower(esquemaLaboratorio + esquemaSnapshotLaboratorio)
-	for _, fragmento := range []string{"organization_id", "foreign key (organization_id)", "on delete cascade"} {
-		if !strings.Contains(texto, fragmento) {
-			t.Fatalf("el esquema no contiene %q", fragmento)
-		}
-	}
-}
-
 func TestAgregarUnicosComparacion(t *testing.T) {
 	obtenidos := agregarUnicos([]string{"No saludo"}, []string{" no saludo ", "No confirmo fecha"})
 	if len(obtenidos) != 2 || obtenidos[1] != "No confirmo fecha" {

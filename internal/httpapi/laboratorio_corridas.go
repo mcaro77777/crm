@@ -52,10 +52,6 @@ type trabajoLaboratorio struct {
 }
 
 func (s *Servidor) iniciarCorridaLaboratorio(w http.ResponseWriter, r *http.Request) {
-	if err := s.asegurarEsquemaLaboratorio(r.Context()); err != nil {
-		s.errorInterno(w, "asegurar laboratorio", err)
-		return
-	}
 	var entrada entradaCorridaLaboratorio
 	if !decodificarJSON(w, r, &entrada) {
 		return
