@@ -59,10 +59,11 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 		return mensajeDTO{}, &errorEnvio{422, "validation_error", "El mensaje no puede estar vacio"}
 	}
 	var identidad, canal string
+	var conversacionExterna sql.NullString
 	var ultimoEntrante sql.NullTime
 	var prueba, iaActiva, contactoPausado bool
 	var handoff sql.NullTime
-	err := s.db.QueryRowContext(ctx, `SELECT c.wa_identity,cv.channel,cv.last_inbound_at,cv.is_test,cv.ai_enabled,cv.handoff_at,c.ai_paused FROM conversation cv JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.id=?`, org, conversacionID).Scan(&identidad, &canal, &ultimoEntrante, &prueba, &iaActiva, &handoff, &contactoPausado)
+	err := s.db.QueryRowContext(ctx, `SELECT c.wa_identity,cv.channel,cv.channel_thread_ref,cv.last_inbound_at,cv.is_test,cv.ai_enabled,cv.handoff_at,c.ai_paused FROM conversation cv JOIN contact c ON c.id=cv.contact_id AND c.organization_id=cv.organization_id WHERE cv.organization_id=? AND cv.id=?`, org, conversacionID).Scan(&identidad, &canal, &conversacionExterna, &ultimoEntrante, &prueba, &iaActiva, &handoff, &contactoPausado)
 	if errors.Is(err, sql.ErrNoRows) {
 		return mensajeDTO{}, &errorEnvio{404, "not_found", "Conversacion no encontrada"}
 	}
@@ -109,7 +110,7 @@ func (s *Servidor) enviarTextoConversacion(ctx context.Context, org, conversacio
 	var waID any
 	if !prueba {
 		if canal == "whatsapp" {
-			id, err := s.enviarTextoWhatsApp(ctx, org, identidad, texto)
+			id, err := s.enviarTextoWhatsApp(ctx, org, identidad, conversacionExterna.String, texto)
 			if err != nil {
 				return mensajeDTO{}, &errorEnvio{502, "whatsapp_send_failed", err.Error()}
 			}

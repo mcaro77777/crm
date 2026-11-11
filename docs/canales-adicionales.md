@@ -25,7 +25,12 @@ Los endpoints `PUT`, `POST .../test` y `DELETE` bajo
 El token y el secreto de firma se cifran con AES-256-GCM usando
 `ENCRYPTION_KEY`. La API y la interfaz muestran únicamente los últimos cuatro
 caracteres del token. Para Zernio se puede cambiar el transporte con
-`ZERNIO_BASE_URL`; el valor normal es `https://api.zernio.com/v1`.
+`ZERNIO_BASE_URL`; el valor normal es `https://zernio.com/api/v1`.
+
+Para WhatsApp, Nexora consulta las cuentas disponibles usando la API key,
+genera internamente un secreto aleatorio de 256 bits, crea o actualiza el
+webhook en Zernio y comprueba su entrega antes de activar el transporte. El
+usuario no necesita copiar Account IDs ni administrar secretos de firma.
 
 ## Webhooks e identidad
 

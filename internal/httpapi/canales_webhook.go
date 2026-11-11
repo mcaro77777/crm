@@ -19,8 +19,8 @@ import (
 )
 
 type mensajeCanalEntrante struct {
-	Canal, CuentaID, Remitente, Nombre, ID, Texto, Tipo, Estado string
-	Marca                                                       time.Time
+	Canal, CuentaID, Remitente, Nombre, ID, Texto, Tipo, Estado, ConversacionExterna string
+	Marca                                                                            time.Time
 }
 
 type eventoMetaSocial struct {
@@ -156,6 +156,60 @@ func (s *Servidor) procesarEventoZernio(ctx context.Context, org string, cuerpo 
 		}
 	}
 	for _, e := range eventos {
+		evento := textoMapa(e, "event")
+		if evento == "webhook.test" || valorBooleanoMapa(e, "test") {
+			continue
+		}
+		mensaje, _ := e["message"].(map[string]any)
+		conversacion, _ := e["conversation"].(map[string]any)
+		cuentaZernio, _ := e["account"].(map[string]any)
+		if mensaje != nil {
+			canal := textoMapa(mensaje, "platform")
+			if canal == "facebook" {
+				canal = "messenger"
+			}
+			if canal == "ig" {
+				canal = "instagram"
+			}
+			id := textoMapa(mensaje, "platformMessageId", "id")
+			if evento != "message.received" {
+				estado := strings.TrimPrefix(evento, "message.")
+				if id != "" && (estado == "sent" || estado == "delivered" || estado == "read" || estado == "failed") {
+					if err := s.actualizarEstadoMensaje(ctx, org, canal+":"+id, estado); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			sender, _ := mensaje["sender"].(map[string]any)
+			remitente := textoMapa(sender, "businessScopedUserId", "phoneNumber", "id")
+			if remitente == "" {
+				remitente = textoMapa(conversacion, "participantId")
+			}
+			remitente = strings.TrimPrefix(remitente, "+")
+			if remitente == "" || id == "" {
+				continue
+			}
+			marca := fechaMapa(mensaje, "sentAt")
+			if marca.IsZero() {
+				marca = fechaMapa(e, "timestamp")
+			}
+			if marca.IsZero() {
+				marca = time.Now().UTC()
+			}
+			nombre := textoMapa(sender, "name", "username")
+			if nombre == "" {
+				nombre = textoMapa(conversacion, "participantName", "participantUsername")
+			}
+			if err := s.guardarMensajeCanal(ctx, org, mensajeCanalEntrante{
+				Canal: canal, CuentaID: textoMapa(cuentaZernio, "accountId", "id"), Remitente: remitente,
+				Nombre: nombre, ID: id, Texto: textoMapa(mensaje, "text"), Tipo: "text", Marca: marca,
+				ConversacionExterna: textoMapa(conversacion, "id", "platformConversationId"),
+			}); err != nil {
+				return err
+			}
+			continue
+		}
 		canal := textoMapa(e, "platform", "channel", "canal")
 		if canal == "ig" {
 			canal = "instagram"
@@ -194,11 +248,27 @@ func (s *Servidor) procesarEventoZernio(ctx context.Context, org string, cuerpo 
 				marca = t.UTC()
 			}
 		}
-		if err := s.guardarMensajeCanal(ctx, org, mensajeCanalEntrante{Canal: canal, CuentaID: cuenta, Remitente: remitente, Nombre: textoMapa(e, "sender_name", "senderName", "name"), ID: id, Texto: texto, Tipo: "text", Marca: marca}); err != nil {
+		if err := s.guardarMensajeCanal(ctx, org, mensajeCanalEntrante{Canal: canal, CuentaID: cuenta, Remitente: remitente, Nombre: textoMapa(e, "sender_name", "senderName", "name"), ID: id, Texto: texto, Tipo: "text", Marca: marca, ConversacionExterna: textoMapa(e, "conversation_id", "conversationId")}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func valorBooleanoMapa(m map[string]any, clave string) bool {
+	v, _ := m[clave].(bool)
+	return v
+}
+
+func fechaMapa(m map[string]any, clave string) time.Time {
+	valor := textoMapa(m, clave)
+	if valor == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339Nano, valor); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
 }
 
 func textoMapa(m map[string]any, claves ...string) string {
@@ -266,12 +336,16 @@ func (s *Servidor) guardarMensajeCanal(ctx context.Context, org string, entrada 
 	err = tx.QueryRowContext(ctx, `SELECT id FROM conversation WHERE organization_id=? AND contact_id=? AND is_test=0`, org, contactoID).Scan(&convID)
 	if errors.Is(err, sql.ErrNoRows) {
 		convID, _ = identificadores.Nuevo("cv")
-		if _, err = tx.ExecContext(ctx, `INSERT INTO conversation(id,organization_id,contact_id,is_test,channel,channel_thread_ref,ai_enabled,last_inbound_at,last_message_at,unread_count,created_at,updated_at) VALUES (?,?,?,0,?,?,1,?,?,1,?,?)`, convID, org, contactoID, entrada.Canal, entrada.Remitente, entrada.Marca, entrada.Marca, ahora, ahora); err != nil {
+		hilo := entrada.ConversacionExterna
+		if hilo == "" {
+			hilo = entrada.Remitente
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO conversation(id,organization_id,contact_id,is_test,channel,channel_thread_ref,ai_enabled,last_inbound_at,last_message_at,unread_count,created_at,updated_at) VALUES (?,?,?,0,?,?,1,?,?,1,?,?)`, convID, org, contactoID, entrada.Canal, hilo, entrada.Marca, entrada.Marca, ahora, ahora); err != nil {
 			return err
 		}
 	} else if err != nil {
 		return err
-	} else if _, err = tx.ExecContext(ctx, `UPDATE conversation SET last_inbound_at=?,last_message_at=?,unread_count=unread_count+1,updated_at=? WHERE organization_id=? AND id=?`, entrada.Marca, entrada.Marca, ahora, org, convID); err != nil {
+	} else if _, err = tx.ExecContext(ctx, `UPDATE conversation SET channel_thread_ref=COALESCE(NULLIF(?,''),channel_thread_ref),last_inbound_at=?,last_message_at=?,unread_count=unread_count+1,updated_at=? WHERE organization_id=? AND id=?`, entrada.ConversacionExterna, entrada.Marca, entrada.Marca, ahora, org, convID); err != nil {
 		return err
 	}
 	mensajeID, _ := identificadores.Nuevo("msg")

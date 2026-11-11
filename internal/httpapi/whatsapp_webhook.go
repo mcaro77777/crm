@@ -75,7 +75,7 @@ func (s *Servidor) recibirWebhookWhatsApp(w http.ResponseWriter, r *http.Request
 	}
 	fuente := s.fuenteWhatsApp(r.Context(), organizacionID)
 	eventoFuente := "whatsapp"
-	if fuente == "zernio" {
+	if fuente == "zernio" || r.Header.Get("X-Zernio-Signature") != "" {
 		credencial, errCredencial := s.credencialWhatsAppZernio(r.Context(), organizacionID)
 		if errCredencial != nil || credencial.WebhookSecret == "" || !firmaWebhookValida(cuerpo, r.Header.Get("X-Zernio-Signature"), credencial.WebhookSecret) {
 			responderError(w, http.StatusUnauthorized, "invalid_signature", "Firma de Zernio invalida", nil)
@@ -92,7 +92,11 @@ func (s *Servidor) recibirWebhookWhatsApp(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	huella := sha256.Sum256(cuerpo)
+	materialHuella := cuerpo
+	if eventoID := strings.TrimSpace(r.Header.Get("X-Zernio-Event-Id")); eventoFuente == "zernio" && eventoID != "" {
+		materialHuella = []byte("zernio:" + eventoID)
+	}
+	huella := sha256.Sum256(materialHuella)
 	id, _ := identificadores.Nuevo("whe")
 	ahora := time.Now().UTC()
 	_, err = s.db.ExecContext(r.Context(), `INSERT IGNORE INTO webhook_event (id,organization_id,fuente,payload,huella,status,not_before,created_at,updated_at) VALUES (?,?,?,?,?,'pendiente',?,?,?)`, id, organizacionID, eventoFuente, string(cuerpo), hex.EncodeToString(huella[:]), ahora, ahora, ahora)

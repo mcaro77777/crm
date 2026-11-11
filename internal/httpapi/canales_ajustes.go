@@ -226,6 +226,10 @@ func (s *Servidor) probarCredencialSocial(ctx context.Context, c credencialCanal
 }
 
 func (s *Servidor) ejecutarZernio(ctx context.Context, token, metodo, ruta string, entrada any) ([]byte, error) {
+	return s.ejecutarZernioConHeaders(ctx, token, metodo, ruta, entrada, nil)
+}
+
+func (s *Servidor) ejecutarZernioConHeaders(ctx context.Context, token, metodo, ruta string, entrada any, headers map[string]string) ([]byte, error) {
 	var cuerpo io.Reader
 	if entrada != nil {
 		datos, _ := json.Marshal(entrada)
@@ -236,6 +240,9 @@ func (s *Servidor) ejecutarZernio(ctx context.Context, token, metodo, ruta strin
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	for nombre, valor := range headers {
+		req.Header.Set(nombre, valor)
+	}
 	if entrada != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -246,7 +253,23 @@ func (s *Servidor) ejecutarZernio(ctx context.Context, token, metodo, ruta strin
 	defer res.Body.Close()
 	datos, _ := io.ReadAll(io.LimitReader(res.Body, 2<<20))
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("Zernio respondio %d", res.StatusCode)
+		var detalle struct {
+			Error   string `json:"error"`
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		}
+		_ = json.Unmarshal(datos, &detalle)
+		mensaje := strings.TrimSpace(detalle.Message)
+		if mensaje == "" {
+			mensaje = strings.TrimSpace(detalle.Error)
+		}
+		if mensaje == "" {
+			mensaje = http.StatusText(res.StatusCode)
+		}
+		if detalle.Code != "" {
+			mensaje += " (" + detalle.Code + ")"
+		}
+		return nil, fmt.Errorf("Zernio respondio %d: %s", res.StatusCode, mensaje)
 	}
 	return datos, nil
 }
@@ -296,35 +319,36 @@ func (s *Servidor) enviarTextoSocial(ctx context.Context, org, canal, destinatar
 	return canal + ":" + salida.MessageID, nil
 }
 
-func (s *Servidor) enviarTextoWhatsApp(ctx context.Context, org, destinatario, texto string) (string, error) {
+func (s *Servidor) enviarTextoWhatsApp(ctx context.Context, org, destinatario, conversacionExterna, texto string) (string, error) {
 	if s.fuenteWhatsApp(ctx, org) == "zernio" {
 		cred, err := s.credencialWhatsAppZernio(ctx, org)
 		if err != nil {
 			return "", errors.New("WhatsApp por Zernio no esta configurado")
 		}
-		datos, err := s.ejecutarZernio(ctx, cred.Token, http.MethodPost, "/messages", map[string]any{
-			"account_id": cred.CuentaID,
-			"platform":   "whatsapp",
-			"recipient":  destinatario,
-			"text":       texto,
-		})
+		if strings.TrimSpace(conversacionExterna) == "" {
+			return "", errors.New("la conversacion de Zernio no tiene identificador; espera un nuevo mensaje del cliente")
+		}
+		clave, _ := identificadores.Nuevo("send")
+		ruta := "/inbox/conversations/" + url.PathEscape(conversacionExterna) + "/messages"
+		datos, err := s.ejecutarZernioConHeaders(ctx, cred.Token, http.MethodPost, ruta, map[string]any{
+			"accountId": cred.CuentaID,
+			"message":   texto,
+		}, map[string]string{"Idempotency-Key": clave})
 		if err != nil {
 			return "", err
 		}
 		var salida struct {
-			ID        string `json:"id"`
-			MessageID string `json:"message_id"`
+			Data struct {
+				MessageID string `json:"messageId"`
+			} `json:"data"`
 		}
 		if json.Unmarshal(datos, &salida) != nil {
 			return "", errors.New("Zernio devolvio una respuesta invalida")
 		}
-		if salida.ID == "" {
-			salida.ID = salida.MessageID
-		}
-		if salida.ID == "" {
+		if salida.Data.MessageID == "" {
 			return "", errors.New("Zernio no devolvio el identificador del mensaje")
 		}
-		return "whatsapp:" + salida.ID, nil
+		return "whatsapp:" + salida.Data.MessageID, nil
 	}
 	cred, err := s.credencialMeta(ctx, org)
 	if err != nil {

@@ -54,7 +54,7 @@ func (s *Servidor) tokenWebhook(organizacionID string) string {
 
 func (s *Servidor) resolverOrganizacionWebhook(ctx context.Context, token string) (string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT organization_id FROM meta_credentials
-		UNION SELECT organization_id FROM app_setting WHERE clave='whatsapp_source' AND valor='zernio'`)
+		UNION SELECT organization_id FROM app_setting WHERE clave='whatsapp_zernio_account_id' AND COALESCE(valor,'')<>''`)
 	if err != nil {
 		return "", err
 	}

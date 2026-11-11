@@ -61,7 +61,14 @@ func TestIntegracionCanalesE3MetaZernioYFiltros(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
 			llamadasZernio.Add(1)
-			_, _ = w.Write([]byte(`{"id":"z-out"}`))
+			if strings.Contains(r.URL.Path, "/inbox/conversations/") {
+				if r.Header.Get("Idempotency-Key") == "" {
+					t.Error("falta Idempotency-Key")
+				}
+				_, _ = w.Write([]byte(`{"success":true,"data":{"messageId":"z-out","conversationId":"conv-wa"}}`))
+			} else {
+				_, _ = w.Write([]byte(`{"id":"z-out"}`))
+			}
 			return
 		}
 		_, _ = w.Write([]byte(`{"id":"tt_e3"}`))
@@ -110,7 +117,7 @@ func TestIntegracionCanalesE3MetaZernioYFiltros(t *testing.T) {
 	if err = s.procesarEventoZernio(ctx, org, []byte(`{"platform":"tiktok","account_id":"tt_e3","sender_id":"persona-tt","sender_name":"Luis TT","message_id":"in-tt","text":"Precio","timestamp":"`+ahora.Format(time.RFC3339)+`"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.procesarEventoZernio(ctx, org, []byte(`{"platform":"whatsapp","account_id":"wa_e3","sender_id":"56911111111","sender_name":"Marta WA","message_id":"in-wa","text":"Hola","timestamp":"`+ahora.Format(time.RFC3339)+`"}`)); err != nil {
+	if err = s.procesarEventoZernio(ctx, org, []byte(`{"id":"evt-wa","event":"message.received","timestamp":"`+ahora.Format(time.RFC3339)+`","account":{"id":"wa_e3","accountId":"wa_e3","platform":"whatsapp","username":"ventas"},"conversation":{"id":"conv-wa","platformConversationId":"56911111111","participantId":"56911111111","participantName":"Marta WA","status":"active"},"message":{"id":"msg-interno","conversationId":"conv-wa","platform":"whatsapp","platformMessageId":"in-wa","direction":"incoming","text":"Hola","attachments":[],"sender":{"id":"56911111111","name":"Marta WA","phoneNumber":"+56911111111"},"sentAt":"`+ahora.Format(time.RFC3339)+`","isRead":false}}`)); err != nil {
 		t.Fatal(err)
 	}
 	for _, caso := range []struct{ identidad, canal string }{{"ig:persona-ig", "instagram"}, {"tt:persona-tt", "tiktok"}, {"56911111111", "whatsapp"}} {

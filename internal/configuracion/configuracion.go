@@ -39,7 +39,7 @@ func Cargar() (Configuracion, error) {
 		DirectorioCliente:    valor("CLIENT_APP_DIR", "ClientApp"),
 		DirectorioMedios:     valor("MEDIA_DIR", ".dev-media"),
 		MetaGraphBaseURL:     valor("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
-		ZernioBaseURL:        valor("ZERNIO_BASE_URL", "https://api.zernio.com/v1"),
+		ZernioBaseURL:        valor("ZERNIO_BASE_URL", "https://zernio.com/api/v1"),
 	}
 
 	var err error

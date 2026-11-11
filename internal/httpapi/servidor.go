@@ -105,6 +105,7 @@ func NuevoServidorIntegrado(cfg configuracion.Configuracion, db *sql.DB, logger 
 
 	mux.Handle("GET /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.obtenerAjustesWhatsApp)))
 	mux.Handle("PUT /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.guardarAjustesWhatsApp)))
+	mux.Handle("POST /api/settings/whatsapp/zernio/accounts", s.requerirSesion(http.HandlerFunc(s.listarCuentasWhatsAppZernio)))
 	mux.Handle("POST /api/settings/whatsapp/test", s.requerirSesion(http.HandlerFunc(s.probarWhatsApp)))
 	mux.Handle("DELETE /api/settings/whatsapp", s.requerirSesion(http.HandlerFunc(s.eliminarAjustesWhatsApp)))
 	mux.Handle("GET /api/settings/channels", s.requerirSesion(http.HandlerFunc(s.listarAjustesCanales)))
