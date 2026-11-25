@@ -30,18 +30,19 @@ type whatsappEntrada struct {
 }
 
 type whatsappEstado struct {
-	Conectado         bool   `json:"conectado"`
-	Fuente            string `json:"fuente"`
-	WABAID            string `json:"wabaId,omitempty"`
-	TelefonoID        string `json:"phoneNumberId,omitempty"`
-	CuentaID          string `json:"cuentaId,omitempty"`
-	Telefono          string `json:"telefono,omitempty"`
-	NombreVerificado  string `json:"nombreVerificado,omitempty"`
-	TokenUltimos4     string `json:"tokenUltimos4,omitempty"`
-	Version           string `json:"graphApiVersion"`
-	WebhookURL        string `json:"webhookUrl,omitempty"`
-	VerifyToken       string `json:"verifyToken,omitempty"`
-	WebhookGestionado bool   `json:"webhookGestionado,omitempty"`
+	Conectado         bool                   `json:"conectado"`
+	Fuente            string                 `json:"fuente"`
+	WABAID            string                 `json:"wabaId,omitempty"`
+	TelefonoID        string                 `json:"phoneNumberId,omitempty"`
+	CuentaID          string                 `json:"cuentaId,omitempty"`
+	Telefono          string                 `json:"telefono,omitempty"`
+	NombreVerificado  string                 `json:"nombreVerificado,omitempty"`
+	TokenUltimos4     string                 `json:"tokenUltimos4,omitempty"`
+	Version           string                 `json:"graphApiVersion"`
+	WebhookURL        string                 `json:"webhookUrl,omitempty"`
+	VerifyToken       string                 `json:"verifyToken,omitempty"`
+	WebhookGestionado bool                   `json:"webhookGestionado,omitempty"`
+	RegistroInsertado *registroInsertadoMeta `json:"registroInsertado,omitempty"`
 }
 
 type cuentaWhatsAppZernio struct {
@@ -58,6 +59,9 @@ func (s *Servidor) obtenerAjustesWhatsApp(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		s.errorInterno(w, "leer ajustes de WhatsApp", err)
 		return
+	}
+	if validarRol(sesion, "owner", "admin") == nil {
+		estado.RegistroInsertado = s.configuracionRegistroInsertado()
 	}
 	responderJSON(w, http.StatusOK, estado)
 }
@@ -144,6 +148,11 @@ func (s *Servidor) guardarAjustesWhatsApp(w http.ResponseWriter, r *http.Request
 		responderError(w, 422, "meta_connection_failed", err.Error(), nil)
 		return
 	}
+	s.persistirConexionMeta(w, r, entrada, telefono)
+}
+
+func (s *Servidor) persistirConexionMeta(w http.ResponseWriter, r *http.Request, entrada whatsappEntrada, telefono meta.Telefono) {
+	sesion := sesionDe(r.Context())
 	secreto, err := seguridad.CifrarSecreto(s.cfg.LlaveCifrado, entrada.Token)
 	if err != nil {
 		s.errorInterno(w, "cifrar token de Meta", err)
@@ -160,35 +169,44 @@ func (s *Servidor) guardarAjustesWhatsApp(w http.ResponseWriter, r *http.Request
 		responderError(w, http.StatusConflict, "phone_already_connected", "Este Phone Number ID ya pertenece a otra organizacion", nil)
 		return
 	}
-	resultado, err := s.db.ExecContext(r.Context(), `UPDATE meta_credentials SET waba_id=?,phone_number_id=?,display_phone_number=?,verified_name=?,token_cipher=?,token_iv=?,token_tag=?,status='connected',updated_at=? WHERE organization_id=?`, entrada.WABAID, entrada.TelefonoID, telefono.DisplayPhoneNumber, telefono.VerifiedName, secreto.Cifrado, secreto.IV, secreto.Tag, ahora, sesion.OrganizacionID)
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		s.errorInterno(w, "iniciar guardado de conexion de Meta", err)
+		return
+	}
+	defer tx.Rollback()
+	resultado, err := tx.ExecContext(r.Context(), `UPDATE meta_credentials SET waba_id=?,phone_number_id=?,display_phone_number=?,verified_name=?,token_cipher=?,token_iv=?,token_tag=?,status='connected',updated_at=? WHERE organization_id=?`, entrada.WABAID, entrada.TelefonoID, telefono.DisplayPhoneNumber, telefono.VerifiedName, secreto.Cifrado, secreto.IV, secreto.Tag, ahora, sesion.OrganizacionID)
 	if err != nil {
 		s.errorInterno(w, "guardar credenciales de Meta", err)
 		return
 	}
 	actualizadas, _ := resultado.RowsAffected()
 	if actualizadas == 0 {
-		_, err = s.db.ExecContext(r.Context(), `INSERT INTO meta_credentials (id,organization_id,waba_id,phone_number_id,display_phone_number,verified_name,token_cipher,token_iv,token_tag,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'connected',?,?)`, id, sesion.OrganizacionID, entrada.WABAID, entrada.TelefonoID, telefono.DisplayPhoneNumber, telefono.VerifiedName, secreto.Cifrado, secreto.IV, secreto.Tag, ahora, ahora)
+		_, err = tx.ExecContext(r.Context(), `INSERT INTO meta_credentials (id,organization_id,waba_id,phone_number_id,display_phone_number,verified_name,token_cipher,token_iv,token_tag,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'connected',?,?)`, id, sesion.OrganizacionID, entrada.WABAID, entrada.TelefonoID, telefono.DisplayPhoneNumber, telefono.VerifiedName, secreto.Cifrado, secreto.IV, secreto.Tag, ahora, ahora)
 		if err != nil {
 			s.errorInterno(w, "insertar credenciales de Meta", err)
 			return
 		}
 	}
-	if err := s.guardarAjuste(r.Context(), sesion.OrganizacionID, "meta_graph_version", entrada.Version); err != nil {
+	if err := escribirAjuste(r.Context(), tx, sesion.OrganizacionID, "meta_graph_version", entrada.Version); err != nil {
 		s.errorInterno(w, "guardar version de Meta", err)
 		return
 	}
 	if entrada.AppSecret != "" {
-		if err := s.guardarSecreto(r.Context(), sesion.OrganizacionID, "meta_app_secret", entrada.AppSecret); err != nil {
+		if err := s.escribirSecreto(r.Context(), tx, sesion.OrganizacionID, "meta_app_secret", entrada.AppSecret); err != nil {
 			s.errorInterno(w, "guardar secreto de Meta", err)
 			return
 		}
 	}
-	if err := s.guardarAjuste(r.Context(), sesion.OrganizacionID, "whatsapp_source", "meta"); err != nil {
+	if err := escribirAjuste(r.Context(), tx, sesion.OrganizacionID, "whatsapp_source", "meta"); err != nil {
 		s.errorInterno(w, "guardar transporte de WhatsApp", err)
 		return
 	}
-	estado, _ := s.estadoWhatsApp(r.Context(), sesion.OrganizacionID)
-	responderJSON(w, http.StatusOK, estado)
+	if err := tx.Commit(); err != nil {
+		s.errorInterno(w, "confirmar conexion de Meta", err)
+		return
+	}
+	s.obtenerAjustesWhatsApp(w, r)
 }
 
 func (s *Servidor) probarWhatsApp(w http.ResponseWriter, r *http.Request) {

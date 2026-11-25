@@ -13,18 +13,30 @@ import (
 	"crm-api/internal/seguridad"
 )
 
+type ejecutorAjustes interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
 func (s *Servidor) guardarAjuste(ctx context.Context, organizacionID, clave, valor string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO app_setting (organization_id,clave,valor,updated_at)
+	return escribirAjuste(ctx, s.db, organizacionID, clave, valor)
+}
+
+func escribirAjuste(ctx context.Context, db ejecutorAjustes, organizacionID, clave, valor string) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO app_setting (organization_id,clave,valor,updated_at)
 		VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE valor=VALUES(valor),secret_cipher=NULL,secret_iv=NULL,secret_tag=NULL,updated_at=VALUES(updated_at)`, organizacionID, clave, valor, time.Now().UTC())
 	return err
 }
 
 func (s *Servidor) guardarSecreto(ctx context.Context, organizacionID, clave, valor string) error {
+	return s.escribirSecreto(ctx, s.db, organizacionID, clave, valor)
+}
+
+func (s *Servidor) escribirSecreto(ctx context.Context, db ejecutorAjustes, organizacionID, clave, valor string) error {
 	secreto, err := seguridad.CifrarSecreto(s.cfg.LlaveCifrado, valor)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO app_setting (organization_id,clave,secret_cipher,secret_iv,secret_tag,updated_at)
+	_, err = db.ExecContext(ctx, `INSERT INTO app_setting (organization_id,clave,secret_cipher,secret_iv,secret_tag,updated_at)
 		VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE valor=NULL,secret_cipher=VALUES(secret_cipher),secret_iv=VALUES(secret_iv),secret_tag=VALUES(secret_tag),updated_at=VALUES(updated_at)`, organizacionID, clave, secreto.Cifrado, secreto.IV, secreto.Tag, time.Now().UTC())
 	return err
 }

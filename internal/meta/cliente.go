@@ -85,6 +85,59 @@ type Telefono struct {
 	VerifiedName       string `json:"verified_name"`
 }
 
+// CanjearCodigoRegistro mantiene los datos de OAuth en el servidor.
+// Los errores de este intercambio se descartan porque pueden incluir la URL con secretos.
+func (c *Cliente) CanjearCodigoRegistro(ctx context.Context, appID, secreto, codigo string) (string, error) {
+	query := url.Values{"client_id": {appID}, "client_secret": {secreto}, "code": {codigo}}
+	var salida struct {
+		Token string `json:"access_token"`
+	}
+	cliente := *c.HTTP
+	cliente.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	copia := *c
+	copia.HTTP = &cliente
+	if err := copia.Ejecutar(ctx, http.MethodGet, "oauth/access_token?"+query.Encode(), nil, &salida); err != nil || salida.Token == "" {
+		return "", fmt.Errorf("Meta no pudo canjear el codigo de registro")
+	}
+	return salida.Token, nil
+}
+
+func (c *Cliente) ValidarTelefonoCoexistente(ctx context.Context, cuentaID, telefonoID string) (Telefono, error) {
+	var telefono struct {
+		Telefono
+		EnApp bool   `json:"is_on_biz_app"`
+		Tipo  string `json:"platform_type"`
+	}
+	ruta := url.PathEscape(telefonoID) + "?fields=id,display_phone_number,verified_name,is_on_biz_app,platform_type"
+	if err := c.Ejecutar(ctx, http.MethodGet, ruta, nil, &telefono); err != nil || telefono.ID != telefonoID || !telefono.EnApp || telefono.Tipo != "CLOUD_API" {
+		return Telefono{}, fmt.Errorf("Meta no confirmo que el numero use coexistencia")
+	}
+	ruta = url.PathEscape(cuentaID) + "/phone_numbers?fields=id&limit=100"
+	var cuenta struct {
+		Data []struct{ ID string } `json:"data"`
+	}
+	if err := c.Ejecutar(ctx, http.MethodGet, ruta, nil, &cuenta); err != nil {
+		return Telefono{}, fmt.Errorf("Meta no pudo comprobar los numeros de la cuenta")
+	}
+	for _, numero := range cuenta.Data {
+		if numero.ID == telefono.ID {
+			return telefono.Telefono, nil
+		}
+	}
+	return Telefono{}, fmt.Errorf("el numero no aparece en la cuenta de mensajes seleccionada")
+}
+
+func (c *Cliente) SuscribirCuentaWhatsApp(ctx context.Context, cuentaID string) error {
+	var salida struct {
+		Success bool `json:"success"`
+	}
+	err := c.Ejecutar(ctx, http.MethodPost, url.PathEscape(cuentaID)+"/subscribed_apps", nil, &salida)
+	if err != nil || !salida.Success {
+		return fmt.Errorf("Meta no confirmo la suscripcion al webhook")
+	}
+	return nil
+}
+
 func (c *Cliente) ConsultarTelefono(ctx context.Context, id string) (Telefono, error) {
 	var salida Telefono
 	ruta := url.PathEscape(id) + "?fields=id,display_phone_number,verified_name"

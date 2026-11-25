@@ -115,6 +115,17 @@ func (s *Servidor) procesarEventoWhatsApp(ctx context.Context, organizacionID st
 	for _, entrada := range evento.Entry {
 		for _, cambio := range entrada.Changes {
 			valor := cambio.Value
+			if numero := valor.Metadata.PhoneNumberID; numero != "" {
+				var corresponde bool
+				err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM meta_credentials
+					WHERE organization_id=? AND phone_number_id=? AND status='connected')`, organizacionID, numero).Scan(&corresponde)
+				if err != nil {
+					return err
+				}
+				if !corresponde {
+					continue
+				}
+			}
 			for _, estado := range valor.Statuses {
 				if err := s.actualizarEstadoMensaje(ctx, organizacionID, estado.ID, estado.Status); err != nil {
 					return err

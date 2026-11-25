@@ -25,21 +25,27 @@ type Configuracion struct {
 	DirectorioCliente      string
 	DirectorioMedios       string
 	MetaGraphBaseURL       string
+	MetaEmbeddedAppID      string
+	MetaEmbeddedConfigID   string
+	MetaEmbeddedAppSecret  string
 	ZernioBaseURL          string
 	CerebroWorkers         int
 }
 
 func Cargar() (Configuracion, error) {
 	cfg := Configuracion{
-		Entorno:              valor("APP_ENV", "development"),
-		Puerto:               valor("PORT", "8080"),
-		URLBase:              valor("APP_BASE_URL", "http://localhost:8080"),
-		DSN:                  strings.TrimSpace(os.Getenv("DATABASE_DSN")),
-		SecretoAutenticacion: os.Getenv("AUTH_SECRET"),
-		DirectorioCliente:    valor("CLIENT_APP_DIR", "ClientApp"),
-		DirectorioMedios:     valor("MEDIA_DIR", ".dev-media"),
-		MetaGraphBaseURL:     valor("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
-		ZernioBaseURL:        valor("ZERNIO_BASE_URL", "https://zernio.com/api/v1"),
+		Entorno:               valor("APP_ENV", "development"),
+		Puerto:                valor("PORT", "8080"),
+		URLBase:               valor("APP_BASE_URL", "http://localhost:8080"),
+		DSN:                   strings.TrimSpace(os.Getenv("DATABASE_DSN")),
+		SecretoAutenticacion:  os.Getenv("AUTH_SECRET"),
+		DirectorioCliente:     valor("CLIENT_APP_DIR", "ClientApp"),
+		DirectorioMedios:      valor("MEDIA_DIR", ".dev-media"),
+		MetaGraphBaseURL:      valor("META_GRAPH_BASE_URL", "https://graph.facebook.com"),
+		MetaEmbeddedAppID:     valor("META_EMBEDDED_APP_ID", ""),
+		MetaEmbeddedConfigID:  valor("META_EMBEDDED_CONFIG_ID", ""),
+		MetaEmbeddedAppSecret: valor("META_EMBEDDED_APP_SECRET", ""),
+		ZernioBaseURL:         valor("ZERNIO_BASE_URL", "https://zernio.com/api/v1"),
 	}
 
 	var err error
